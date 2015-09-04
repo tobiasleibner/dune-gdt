@@ -103,25 +103,18 @@ public:
 
   TimeFieldType step(const TimeFieldType dt)
   {
-    DiscreteFunctionType u_n_copy(u_n_);
+    // DiscreteFunctionType u_n_copy(u_n_);
     apply_RK_scheme(flux_operator_, dt, -1.0);       // evaluate conservation law d_t u + L(u) = 0
-//    apply_RK_scheme(source_operator_,dt, 1.0);      // evaluate source terms d_t u = q(u)
+    apply_RK_scheme(source_operator_,dt, 1.0);      // evaluate source terms d_t u = q(u)
 
       // unsplit method (comment second apply_RK_scheme above and uncomment definition of u_n_copy)
-      u_intermediate_stages_[0].vector() *= RangeFieldType(0);
-      source_operator_.apply(u_n_copy, u_intermediate_stages_[0], t_);
-      u_n_.vector() += u_intermediate_stages_[0].vector()*dt;
+//      u_intermediate_stages_[0].vector() *= RangeFieldType(0);
+//      source_operator_.apply(u_n_copy, u_intermediate_stages_[0], t_);
+//      u_n_.vector() += u_intermediate_stages_[0].vector()*dt;
 
       t_ += dt;                                        // augment time
 
-      //calculate new dt <= dx/(2*max_j abs(u_j)) (for TVD MUSCL, see FiniteVolumenLiteratur/TVD-RungeKutta-Schemes)
-//      RangeFieldType max_u_j_abs = 0;
-//      for (auto& u_j : u_n_.vector()) {
-//        const RangeFieldType u_j_abs = std::abs(u_j);
-//        if (u_j_abs > max_u_j_abs)
-//          max_u_j_abs = u_j_abs;
-//      }
-      TimeFieldType dt_new = dt; //0.99*dx_/(8.0*max_u_j_abs);
+      TimeFieldType dt_new = dt;
 
       // return
       return dt_new;
@@ -192,12 +185,6 @@ public:
 
       // augment time step counter
       ++time_step_counter;
-
-      // print info about time, timestep size and counter
-//      if (DSC::FloatCmp::ge(t_, next_output_time)) {
-//        std::cout << " k=" << time_step_counter << " t=" << t_ << " dt=" << dt << std::endl;
-//        next_output_time += output_interval;
-//      }
     } // while (t_ < t_end)
 
     // do last step s.t. it matches t_end exactly
