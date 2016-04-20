@@ -98,7 +98,11 @@ public:
   {
   }
 
-  FvSpace(ThisType&& source) = default;
+  FvSpace(ThisType&& source)
+      : grid_view_(std::move(source.grid_view_))
+      , mapper_(std::move(source.mapper_))
+      , communicator_(CommunicationChooserType::create(grid_view_))
+  {}
 
   ThisType& operator=(const ThisType& other) = delete;
 
