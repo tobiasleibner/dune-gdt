@@ -496,7 +496,7 @@ public:
   void apply()
   {
     if (!walked_) {
-      this->walk();
+      this->walk(true);
       walked_ = true;
     }
   } // ... apply(...)
