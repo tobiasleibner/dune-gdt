@@ -172,7 +172,7 @@ public:
     if (save_solution)
       sol.insert(std::make_pair(t, current_solution()));
     if (visualize)
-      current_solution().visualize(filename_prefix, DSC::to_string(0));
+      current_solution().template visualize_factor< 0 >(filename_prefix, DSC::to_string(0));
 
     while (DSC::FloatCmp::lt(t, t_end)) {
       TimeFieldType max_dt = dt;
@@ -194,7 +194,7 @@ public:
         if (save_solution)
           sol.insert(sol.end(), std::make_pair(t, current_solution()));
         if (visualize)
-          current_solution().visualize(filename_prefix, DSC::to_string(save_step_counter));
+          current_solution().template visualize_factor< 0 >(filename_prefix, DSC::to_string(save_step_counter));
         if (output_progress)
           std::cout << "time step " << time_step_counter << " done, time =" << t << ", current dt= " << dt << std::endl;
         next_save_time += save_interval;
