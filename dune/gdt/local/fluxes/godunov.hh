@@ -142,6 +142,9 @@ public:
     // get flux value
     const FluxRangeType f_u_i = analytical_flux_.evaluate(u_i);
 
+    if (!jacobians_constructed_ && is_linear_)
+      initialize_jacobians();
+
     if (!is_linear_) { // use simple linearized Riemann solver, LeVeque p.316
       reinitialize_jacobians(u_i, u_j);
     }
@@ -183,7 +186,7 @@ public:
   } // RangeType evaluate(...) const
 
 private:
-  void initialize_jacobians()
+  void initialize_jacobians() const
   {
     const FluxJacobianRangeType jacobian(analytical_flux_.jacobian(RangeType(0)));
     std::vector<EigenMatrixType> jacobian_eigen;
@@ -244,22 +247,22 @@ private:
   } // void calculate_jacobians(...)
 
   const AnalyticalFluxType& analytical_flux_;
-  static FluxJacobianRangeType jacobian_neg_;
-  static FluxJacobianRangeType jacobian_pos_;
-  static bool jacobians_constructed_;
+  thread_local static FluxJacobianRangeType jacobian_neg_;
+  thread_local static FluxJacobianRangeType jacobian_pos_;
+  thread_local static bool jacobians_constructed_;
   const bool is_linear_;
 }; // class LocalGodunovNumericalCouplingFlux
 
 template <class AnalyticalFluxImp, size_t dimDomain>
-typename internal::LocalGodunovNumericalCouplingFluxTraits<AnalyticalFluxImp, dimDomain>::FluxJacobianRangeType
+thread_local typename internal::LocalGodunovNumericalCouplingFluxTraits<AnalyticalFluxImp, dimDomain>::FluxJacobianRangeType
     LocalGodunovNumericalCouplingFlux<AnalyticalFluxImp, dimDomain>::jacobian_neg_(0);
 
 template <class AnalyticalFluxImp, size_t dimDomain>
-typename internal::LocalGodunovNumericalCouplingFluxTraits<AnalyticalFluxImp, dimDomain>::FluxJacobianRangeType
+thread_local typename internal::LocalGodunovNumericalCouplingFluxTraits<AnalyticalFluxImp, dimDomain>::FluxJacobianRangeType
     LocalGodunovNumericalCouplingFlux<AnalyticalFluxImp, dimDomain>::jacobian_pos_(0);
 
 template <class AnalyticalFluxImp, size_t dimDomain>
-bool LocalGodunovNumericalCouplingFlux<AnalyticalFluxImp, dimDomain>::jacobians_constructed_(false);
+thread_local bool LocalGodunovNumericalCouplingFlux<AnalyticalFluxImp, dimDomain>::jacobians_constructed_(false);
 
 template <class AnalyticalFluxImp>
 class LocalGodunovNumericalCouplingFlux<AnalyticalFluxImp, 1>
