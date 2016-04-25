@@ -357,6 +357,27 @@ protected:
              || ((row == 3 || row == 5) && (col == 1 || col == 5));
     }
 
+    static ConfigType default_checkerboard_parameters()
+    {
+      ConfigType config;
+      config["sigma_s"] = std::string("[1 1 1 1 1 1 1;")
+                                    +  "1 0 1 0 1 0 1;"
+                                    +  "1 1 0 1 0 1 1;"
+                                    +  "1 0 1 1 1 0 1;"
+                                    +  "1 1 0 1 0 1 1;"
+                                    +  "1 0 1 1 1 0 1;"
+                                    +  "1 1 1 1 1 1 1]";
+      config["sigma_t"] = std::string("[1  1  1  1  1  1  1;")
+                                    +  "1 10  1 10  1 10  1;"
+                                    +  "1  1 10  1 10  1  1;"
+                                    +  "1 10  1  1  1 10  1;"
+                                    +  "1  1 10  1 10  1  1;"
+                                    +  "1 10  1  1  1 10  1;"
+                                    +  "1  1  1  1  1  1  1]";
+      return config;
+    }
+
+
     static void create_rhs_values(ConfigType& rhs_config)
     {
       rhs_config["lower_left"]   = "[0.0 0.0]";
@@ -393,6 +414,33 @@ protected:
         }
       }
     } // ... create_rhs_values(...)
+
+
+    static void create_rhs_values_from_file(const ConfigType& parameter_config, ConfigType& rhs_config)
+    {
+      const auto sigma_s_matrix = DSC::fromString<DSC::FieldMatrix< double, 7, 7 >>(parameter_config["sigma_s"]);
+      const auto sigma_t_matrix = DSC::fromString<DSC::FieldMatrix< double, 7, 7 >>(parameter_config["sigma_t"]);
+      rhs_config["lower_left"]   = "[0.0 0.0]";
+      rhs_config["upper_right"]  = "[7.0 7.0]";
+      rhs_config["num_elements"] = "[7 7]";
+      for (size_t row = 0; row < 7; ++row) {
+        for (size_t col = 0; col < 7; ++col) {
+          auto q = RangeType(0);
+          const auto sigma_s = sigma_s_matrix[row][col];
+          const auto sigma_t = sigma_t_matrix[row][col];
+          if (row == 3 && col == 3) // center
+            q[0] = 1;
+          auto S = MatrixType(0);
+          S[pos(0, 0)][pos(0, 0)] = sigma_s - sigma_t;
+          for (size_t l = 1; l <= momentOrder; ++l)
+            for (size_t m = 0; m <= l; ++m)
+              S[pos(l, m)][pos(l, m)] = -1.0 * sigma_t;
+          size_t number = 7 * row + col;
+          rhs_config["A." + DSC::to_string(number)] = DSC::to_string(S, precision);
+          rhs_config["b." + DSC::to_string(number)] = DSC::to_string(q);
+        }
+      }
+    } // ... create_rhs_values_from_file(...)
 
     // initial value is 0
     static std::string create_initial_values()
@@ -442,6 +490,7 @@ public:
     return Stuff::Common::make_unique<ThisType>(flux, rhs, initial_values, grid_config, boundary_info, boundary_values);
   } // ... create(...)
 
+
   static ConfigType default_config(const std::string sub_name = "")
   {
     ConfigType config;
@@ -450,7 +499,7 @@ public:
     ConfigType flux_config = BaseType::default_config().sub("flux");
     config.add(flux_config, "flux");
     ConfigType rhs_config;
-    GetData::create_rhs_values(rhs_config);
+    GetData::create_rhs_values_from_file(GetData::default_checkerboard_parameters(), rhs_config);
     config.add(rhs_config, "rhs");
     ConfigType initial_value_config;
     initial_value_config["lower_left"]   = "[0.0 0.0]";
