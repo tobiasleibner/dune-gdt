@@ -357,27 +357,6 @@ protected:
              || ((row == 3 || row == 5) && (col == 1 || col == 5));
     }
 
-    static ConfigType default_checkerboard_parameters()
-    {
-      ConfigType config;
-      config["sigma_s"] = std::string("[1 1 1 1 1 1 1;")
-                                    +  "1 0 1 0 1 0 1;"
-                                    +  "1 1 0 1 0 1 1;"
-                                    +  "1 0 1 1 1 0 1;"
-                                    +  "1 1 0 1 0 1 1;"
-                                    +  "1 0 1 1 1 0 1;"
-                                    +  "1 1 1 1 1 1 1]";
-      config["sigma_t"] = std::string("[1  1  1  1  1  1  1;")
-                                    +  "1 10  1 10  1 10  1;"
-                                    +  "1  1 10  1 10  1  1;"
-                                    +  "1 10  1  1  1 10  1;"
-                                    +  "1  1 10  1 10  1  1;"
-                                    +  "1 10  1  1  1 10  1;"
-                                    +  "1  1  1  1  1  1  1]";
-      return config;
-    }
-
-
     static void create_rhs_values(ConfigType& rhs_config)
     {
       rhs_config["lower_left"]   = "[0.0 0.0]";
@@ -491,7 +470,28 @@ public:
   } // ... create(...)
 
 
-  static ConfigType default_config(const std::string sub_name = "")
+  static ConfigType default_checkerboard_parameters()
+  {
+    ConfigType config;
+    config["sigma_s"] = std::string("[1 1 1 1 1 1 1; ")
+                                  +  "1 0 1 0 1 0 1; "
+                                  +  "1 1 0 1 0 1 1; "
+                                  +  "1 0 1 1 1 0 1; "
+                                  +  "1 1 0 1 0 1 1; "
+                                  +  "1 0 1 1 1 0 1; "
+                                  +  "1 1 1 1 1 1 1]";
+    config["sigma_t"] = std::string("[1  1  1  1  1  1  1; ")
+                                  +  "1 10  1 10  1 10  1; "
+                                  +  "1  1 10  1 10  1  1; "
+                                  +  "1 10  1  1  1 10  1; "
+                                  +  "1  1 10  1 10  1  1; "
+                                  +  "1 10  1  1  1 10  1; "
+                                  +  "1  1  1  1  1  1  1]";
+    return config;
+  }
+
+
+  static ConfigType default_config(const ConfigType checkerboard_config = default_checkerboard_parameters(), const std::string sub_name = "")
   {
     ConfigType config;
     config.add(default_grid_config(), "grid");
@@ -499,7 +499,7 @@ public:
     ConfigType flux_config = BaseType::default_config().sub("flux");
     config.add(flux_config, "flux");
     ConfigType rhs_config;
-    GetData::create_rhs_values_from_file(GetData::default_checkerboard_parameters(), rhs_config);
+    GetData::create_rhs_values_from_file(checkerboard_config, rhs_config);
     config.add(rhs_config, "rhs");
     ConfigType initial_value_config;
     initial_value_config["lower_left"]   = "[0.0 0.0]";

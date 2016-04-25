@@ -49,13 +49,31 @@ int main(int argc, char* argv[])
     MPIHelper::instance(argc, argv);
 
     // parse options
-    if (argc < 5) {
-      std::cerr << "Usage: " << argv[0] << "-threading.max_count THREADS -global.datadir DIR [-gridsize GRIDSIZE]" << std::endl;
+    if (argc < 3) {
+      std::cerr << "Usage: " << argv[0] << "-threading.max_count THREADS [-global.datadir DIR -gridsize GRIDSIZE -sigma_s SIGMA_S_MATRIX -sigma_t SIGMA_T_MATRIX]" << std::endl;
       return 1;
     }
+
+    // setup threadmanager
+    DSC_CONFIG.set("threading.partition_factor", 1, true);
+    // set dimensions
+    static const size_t dimDomain = 2;
+    // for dimRange > 250, an "exceeded maximum recursive template instantiation limit" error occurs (tested with
+    // clang 3.5). You need to pass -ftemplate-depth=N with N > dimRange + 10 to clang for higher dimRange.
+    // for Boltzmann2D, this is not dimRange but the maximal moment order
+    static const size_t momentOrder = 15;
+    //choose GridType
+    typedef Dune::YaspGrid< dimDomain >  GridType;
+    typedef typename GridType::Codim< 0 >::Entity                                         EntityType;
+
+    // configure Problem
+    typedef Dune::GDT::Hyperbolic::Problems::Boltzmann2DCheckerboard< EntityType, double, dimDomain, double, momentOrder > ProblemType;
+
     size_t num_threads;
     std::string output_dir;
     std::string grid_size = "100";
+    std::string sigma_s = ProblemType::default_checkerboard_parameters()["sigma_s"];
+    std::string sigma_t = ProblemType::default_checkerboard_parameters()["sigma_t"];
     for (int i = 1; i < argc; ++i) {
       if (std::string(argv[i]) == "-threading.max_count") {
         if (i + 1 < argc) { // Make sure we aren't at the end of argv!
@@ -81,28 +99,34 @@ int main(int argc, char* argv[])
           std::cerr << "-gridsize option requires one argument." << std::endl;
           return 1;
         }
+      } else if (std::string(argv[i]) == "-sigma_s") {
+        if (i + 1 < argc) { // Make sure we aren't at the end of argv!
+          sigma_s = argv[++i]; // Increment 'i' so we don't get the argument as the next argv[i].
+        } else {
+          std::cerr << "-sigma_s option requires one argument." << std::endl;
+          return 1;
+        }
+      } else if (std::string(argv[i]) == "-sigma_t") {
+        if (i + 1 < argc) { // Make sure we aren't at the end of argv!
+          sigma_t = argv[++i]; // Increment 'i' so we don't get the argument as the next argv[i].
+        } else {
+          std::cerr << "-sigma_t option requires one argument." << std::endl;
+          return 1;
+        }
+      } else {
+        std::cerr << "Unknown option " << std::string(argv[i]) << std::endl;
+        return 1;
       }
     }
-
-    // setup threadmanager
-    DSC_CONFIG.set("threading.partition_factor", 1, true);
-    // set dimensions
-    static const size_t dimDomain = 2;
-    // for dimRange > 250, an "exceeded maximum recursive template instantiation limit" error occurs (tested with
-    // clang 3.5). You need to pass -ftemplate-depth=N with N > dimRange + 10 to clang for higher dimRange.
-    // for Boltzmann2D, this is not dimRange but the maximal moment order
-    static const size_t momentOrder = 15;
-    //choose GridType
-    typedef Dune::YaspGrid< dimDomain >  GridType;
-    typedef typename GridType::Codim< 0 >::Entity                                         EntityType;
-
-    // configure Problem
-    typedef Dune::GDT::Hyperbolic::Problems::Boltzmann2DCheckerboard< EntityType, double, dimDomain, double, momentOrder > ProblemType;
 
     static const size_t dimRange = ProblemType::dimRange;
 
     //create Problem
-    const auto problem_ptr = ProblemType::create();
+    typedef Dune::Stuff::Common::Configuration ConfigType;
+    ConfigType checkerboard_config;
+    checkerboard_config["sigma_s"] = sigma_s;
+    checkerboard_config["sigma_t"] = sigma_t;
+    const auto problem_ptr = ProblemType::create(ProblemType::default_config(checkerboard_config));
     const auto& problem = *problem_ptr;
 
     //get grid configuration from problem
@@ -166,7 +190,7 @@ int main(int argc, char* argv[])
         double, TimeStepperMethods::explicit_euler> RHSTimeStepperType;
     typedef typename Dune::GDT::FractionalTimeStepper<FluxTimeStepperType, RHSTimeStepperType> TimeStepperType;
 
-    const size_t num_save_steps = -1;
+    const size_t num_save_steps = 10;
 
     //create Operators
     ConstantFunctionType dx_function(dx);
