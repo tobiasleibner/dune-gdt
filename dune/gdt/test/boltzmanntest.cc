@@ -61,6 +61,7 @@ int main(int argc, char* argv[])
         if (i + 1 < argc) { // Make sure we aren't at the end of argv!
           num_threads = DSC::fromString< size_t >(argv[++i]); // Increment 'i' so we don't get the argument as the next argv[i].
           DS::threadManager().set_max_threads(num_threads);
+          DSC_CONFIG.set("threading.max_count", DSC::toString(num_threads), true);
         } else {
           std::cerr << "-threading.max_count option requires one argument." << std::endl;
           return 1;
@@ -153,7 +154,7 @@ int main(int argc, char* argv[])
     const double dx = dimensions.entity_width.max();
     const double CFL = problem.CFL();
     double dt = CFL*dx; //dx/4.0;
-    const double t_end = 0.03;
+    const double t_end = 3.2;
 
     //define operator types
     typedef typename Dune::Stuff::Functions::Constant< EntityType, DomainFieldType, dimDomain, RangeFieldType, dimRange, 1 > ConstantFunctionType;
@@ -183,7 +184,7 @@ int main(int argc, char* argv[])
 
 //    boost::timer::cpu_timer timer;
     DSC_PROFILER.startTiming("fv.solve");
-    timestepper.solve(t_end, dt, num_save_steps, true, true, false);
+    timestepper.solve(t_end, dt, num_save_steps, true, true, false, DSC_CONFIG.get<std::string>("global.datadir") + "boltzmann");
     DSC_PROFILER.stopTiming("fv.solve");
 //    const auto duration = timer.elapsed();
 //    std::cout << "took: " << duration.wall*1e-9 << " seconds(" << duration.user*1e-9 << ", " << duration.system*1e-9 << ")" << std::endl;
@@ -205,7 +206,7 @@ int main(int argc, char* argv[])
 //      output_file.close();
 
       // visualize solution
-      timestepper.visualize_factor_of_solution< 0 >("boltzmann");
+      timestepper.visualize_factor_of_solution< 0 >(DSC_CONFIG.get<std::string>("global.datadir") + "boltzmann");
 //    }
 //    for (size_t ii = 0; ii < solution_as_discrete_function.size(); ++ii) {
 //      auto& pair = solution_as_discrete_function[ii];
