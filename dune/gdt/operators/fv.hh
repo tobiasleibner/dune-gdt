@@ -425,11 +425,13 @@ public:
                                                                 dimDomain> NumericalBoundaryFluxType;
 
   AdvectionGodunovOperator(const AnalyticalFluxType& analytical_flux, const BoundaryValueFunctionType& boundary_values,
-                           const bool is_linear = false, const bool use_linear_reconstruction = false)
+                           const bool is_linear = false, const bool use_linear_reconstruction = false,
+                           const bool reinitialize_jacobians = true)
     : analytical_flux_(analytical_flux)
     , boundary_values_(boundary_values)
     , is_linear_(is_linear)
     , use_linear_reconstruction_(use_linear_reconstruction)
+    , reinitialize_jacobians_(reinitialize_jacobians)
   {
     internal::EigenvectorInitializer<dimDomain, dimRange, MatrixType, EigenMatrixType, AnalyticalFluxType>::initialize(
         analytical_flux_, is_linear_, use_linear_reconstruction_, eigenvectors_, eigenvectors_inverse_);
@@ -451,7 +453,8 @@ public:
                                                              range,
                                                              time,
                                                              use_linear_reconstruction_,
-                                                             is_linear_);
+                                                             is_linear_,
+                                                             reinitialize_jacobians_);
   }
 
 private:
@@ -459,6 +462,7 @@ private:
   const BoundaryValueFunctionType& boundary_values_;
   const bool is_linear_;
   const bool use_linear_reconstruction_;
+  const bool reinitialize_jacobians_;
   MatrixType eigenvectors_;
   MatrixType eigenvectors_inverse_;
 }; // class AdvectionGodunovOperator
