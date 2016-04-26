@@ -194,7 +194,7 @@ int main(int argc, char* argv[])
 
     //create Operators
     ConstantFunctionType dx_function(dx);
-    OperatorType advection_operator(*analytical_flux, *boundary_values, true);
+    OperatorType advection_operator(*analytical_flux, *boundary_values, true, false, false);
     RHSOperatorType rhs_operator(*rhs);
 
     //create timestepper
