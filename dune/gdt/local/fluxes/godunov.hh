@@ -111,6 +111,9 @@ public:
   typedef typename Traits::EigenMatrixType EigenMatrixType;
   static constexpr size_t dimDomain = Traits::dimDomain;
   static const size_t dimRange      = Traits::dimRange;
+  typedef typename DS::Functions::Affine<typename AnalyticalFluxType::FluxDummyEntityType, RangeFieldType, dimRange,
+                                         RangeFieldType, dimRange, 1> AffineFunctionType;
+  typedef typename FluxJacobianRangeType::value_type FluxColumnJacobianRangeType;
 
   explicit LocalGodunovNumericalCouplingFlux(const AnalyticalFluxType& analytical_flux, const bool is_linear = false,
                                              const bool reinit_jacobians = true)
@@ -173,12 +176,12 @@ public:
     RangeFieldType vol_intersection = intersection.geometry().volume();
     if (n_ij[coord] > 0) {
       RangeType negative_waves(RangeFieldType(0));
-      jacobian_neg_[coord].mv(delta_u, negative_waves);
+      jacobian_neg_function_[coord].evaluate(delta_u, negative_waves);
       for (size_t kk = 0; kk < dimRange; ++kk)
         ret[kk] = (f_u_i[kk][coord] - negative_waves[kk] * n_ij[coord]) * vol_intersection;
     } else {
       RangeType positive_waves(RangeFieldType(0));
-      jacobian_pos_[coord].mv(delta_u, positive_waves);
+      jacobian_pos_function_[coord].evaluate(delta_u, positive_waves);
       for (size_t kk = 0; kk < dimRange; ++kk)
         ret[kk] = (-f_u_i[kk][coord] - positive_waves[kk] * n_ij[coord]) * vol_intersection;
     }
@@ -239,16 +242,18 @@ private:
                                          * eigenvectors_inverse.real());
       EigenMatrixType jacobian_pos_eigen(eigenvectors.real() * diag_jacobian_pos_tmp.backend()
                                          * eigenvectors_inverse.real());
-      jacobian_neg_[ii] = DSC::from_string<Dune::FieldMatrix<RangeFieldType, dimRange, dimRange>>(
-          DSC::to_string(jacobian_neg_eigen, 15));
-      jacobian_pos_[ii] = DSC::from_string<Dune::FieldMatrix<RangeFieldType, dimRange, dimRange>>(
-          DSC::to_string(jacobian_pos_eigen, 15));
+      jacobian_neg_[ii] = jacobian_neg_eigen.operator FluxColumnJacobianRangeType();
+      jacobian_pos_[ii] = jacobian_pos_eigen.operator FluxColumnJacobianRangeType();
+      jacobian_neg_function_[ii]  = AffineFunctionType(jacobian_neg_[ii], RangeType(0), true);
+      jacobian_pos_function_[ii]  = AffineFunctionType(jacobian_pos_[ii], RangeType(0), true);
     }
   } // void calculate_jacobians(...)
 
   const AnalyticalFluxType& analytical_flux_;
   thread_local static FluxJacobianRangeType jacobian_neg_;
   thread_local static FluxJacobianRangeType jacobian_pos_;
+  thread_local static std::vector< AffineFunctionType > jacobian_neg_function_;
+  thread_local static std::vector< AffineFunctionType > jacobian_pos_function_;
   thread_local static bool jacobians_constructed_;
   const bool is_linear_;
 }; // class LocalGodunovNumericalCouplingFlux
@@ -260,6 +265,18 @@ thread_local typename internal::LocalGodunovNumericalCouplingFluxTraits<Analytic
 template <class AnalyticalFluxImp, size_t dimDomain>
 thread_local typename internal::LocalGodunovNumericalCouplingFluxTraits<AnalyticalFluxImp, dimDomain>::FluxJacobianRangeType
     LocalGodunovNumericalCouplingFlux<AnalyticalFluxImp, dimDomain>::jacobian_pos_(0);
+
+template <class AnalyticalFluxImp, size_t dimDomain>
+thread_local std::vector< typename LocalGodunovNumericalCouplingFlux<AnalyticalFluxImp, dimDomain>::AffineFunctionType >
+    LocalGodunovNumericalCouplingFlux<AnalyticalFluxImp, dimDomain>::jacobian_neg_function_(dimDomain,
+            typename LocalGodunovNumericalCouplingFlux<AnalyticalFluxImp, dimDomain>::AffineFunctionType(
+            typename LocalGodunovNumericalCouplingFlux<AnalyticalFluxImp, dimDomain>::FluxColumnJacobianRangeType(0)));
+
+template <class AnalyticalFluxImp, size_t dimDomain>
+thread_local std::vector< typename LocalGodunovNumericalCouplingFlux<AnalyticalFluxImp, dimDomain>::AffineFunctionType >
+    LocalGodunovNumericalCouplingFlux<AnalyticalFluxImp, dimDomain>::jacobian_pos_function_(dimDomain,
+            typename LocalGodunovNumericalCouplingFlux<AnalyticalFluxImp, dimDomain>::AffineFunctionType(
+            typename LocalGodunovNumericalCouplingFlux<AnalyticalFluxImp, dimDomain>::FluxColumnJacobianRangeType(0)));
 
 template <class AnalyticalFluxImp, size_t dimDomain>
 thread_local bool LocalGodunovNumericalCouplingFlux<AnalyticalFluxImp, dimDomain>::jacobians_constructed_(false);
@@ -400,10 +417,8 @@ private:
       EigenMatrixType jacobian_pos_eigen(eigenvectors.real() * diag_jacobian_pos_tmp.backend()
                                          * eigenvectors_inverse.real());
       // set jacobian_neg_ and jacobian_pos_
-      jacobian_neg_ = DSC::from_string<Dune::FieldMatrix<RangeFieldType, dimRange, dimRange>>(
-          DSC::to_string(jacobian_neg_eigen, 15));
-      jacobian_pos_ = DSC::from_string<Dune::FieldMatrix<RangeFieldType, dimRange, dimRange>>(
-          DSC::to_string(jacobian_pos_eigen, 15));
+      jacobian_neg_ = jacobian_neg_eigen.operator FluxJacobianRangeType();
+      jacobian_pos_ = jacobian_pos_eigen.operator FluxJacobianRangeType();
       // jacobian_abs_ = jacobian_pos_ - jacobian_neg_;
       jacobian_abs_ = jacobian_neg_;
       jacobian_abs_ *= RangeFieldType(-1.0);
@@ -486,6 +501,9 @@ public:
   typedef typename Traits::EigenMatrixType EigenMatrixType;
   static const size_t dimDomain = Traits::dimDomain;
   static const size_t dimRange  = Traits::dimRange;
+  typedef typename DS::Functions::Affine<typename AnalyticalFluxType::FluxDummyEntityType, RangeFieldType, dimRange,
+                                         RangeFieldType, dimRange, 1> AffineFunctionType;
+  typedef typename FluxJacobianRangeType::value_type FluxColumnJacobianRangeType;
 
   explicit LocalGodunovNumericalBoundaryFlux(const AnalyticalFluxType& analytical_flux,
                                              const BoundaryValueFunctionType& boundary_values,
@@ -545,12 +563,12 @@ public:
     RangeFieldType vol_intersection = intersection.geometry().volume();
     if (n_ij[coord] > 0) {
       RangeType negative_waves(RangeFieldType(0));
-      jacobian_neg_[coord].mv(delta_u, negative_waves);
+      jacobian_neg_function_[coord].evaluate(delta_u, negative_waves);
       for (size_t kk = 0; kk < dimRange; ++kk)
         ret[kk] = (f_u_i[kk][coord] - negative_waves[kk] * n_ij[coord]) * vol_intersection;
     } else {
       RangeType positive_waves(RangeFieldType(0));
-      jacobian_pos_[coord].mv(delta_u, positive_waves);
+      jacobian_pos_function_[coord].evaluate(delta_u, positive_waves);
       for (size_t kk = 0; kk < dimRange; ++kk)
         ret[kk] = (-f_u_i[kk][coord] - positive_waves[kk] * n_ij[coord]) * vol_intersection;
     }
@@ -609,33 +627,47 @@ private:
                                          * eigenvectors_inverse.real());
       EigenMatrixType jacobian_pos_eigen(eigenvectors.real() * diag_jacobian_pos_tmp.backend()
                                          * eigenvectors_inverse.real());
-      jacobian_neg_[ii] =
-          DSC::from_string<Dune::FieldMatrix<RangeFieldType, dimRange, dimRange>>(DSC::to_string(jacobian_neg_eigen));
-      jacobian_pos_[ii] =
-          DSC::from_string<Dune::FieldMatrix<RangeFieldType, dimRange, dimRange>>(DSC::to_string(jacobian_pos_eigen));
+      jacobian_neg_[ii] = jacobian_neg_eigen.operator FluxColumnJacobianRangeType();
+      jacobian_pos_[ii] = jacobian_pos_eigen.operator FluxColumnJacobianRangeType();
+      jacobian_neg_function_[ii]  = AffineFunctionType(jacobian_neg_[ii], RangeType(0), true);
+      jacobian_pos_function_[ii]  = AffineFunctionType(jacobian_pos_[ii], RangeType(0), true);
     }
   } // void calculate_jacobians(...)
 
   const AnalyticalFluxType& analytical_flux_;
   const BoundaryValueFunctionType& boundary_values_;
-  static FluxJacobianRangeType jacobian_neg_;
-  static FluxJacobianRangeType jacobian_pos_;
-  static bool jacobians_constructed_;
+  thread_local static FluxJacobianRangeType jacobian_neg_;
+  thread_local static FluxJacobianRangeType jacobian_pos_;
+  thread_local static std::vector< AffineFunctionType > jacobian_neg_function_;
+  thread_local static std::vector< AffineFunctionType > jacobian_pos_function_;
+  thread_local static bool jacobians_constructed_;
   const bool is_linear_;
 }; // class LocalGodunovNumericalBoundaryFlux
 
 template <class AnalyticalBoundaryFluxImp, class BoundaryValueFunctionImp, size_t domainDim>
-typename internal::LocalGodunovNumericalBoundaryFluxTraits<AnalyticalBoundaryFluxImp, BoundaryValueFunctionImp,
+thread_local typename internal::LocalGodunovNumericalBoundaryFluxTraits<AnalyticalBoundaryFluxImp, BoundaryValueFunctionImp,
                                                            domainDim>::FluxJacobianRangeType
     LocalGodunovNumericalBoundaryFlux<AnalyticalBoundaryFluxImp, BoundaryValueFunctionImp, domainDim>::jacobian_neg_(0);
 
 template <class AnalyticalBoundaryFluxImp, class BoundaryValueFunctionImp, size_t domainDim>
-typename internal::LocalGodunovNumericalBoundaryFluxTraits<AnalyticalBoundaryFluxImp, BoundaryValueFunctionImp,
+thread_local typename internal::LocalGodunovNumericalBoundaryFluxTraits<AnalyticalBoundaryFluxImp, BoundaryValueFunctionImp,
                                                            domainDim>::FluxJacobianRangeType
     LocalGodunovNumericalBoundaryFlux<AnalyticalBoundaryFluxImp, BoundaryValueFunctionImp, domainDim>::jacobian_pos_(0);
 
+template <class AnalyticalFluxImp, class BoundaryValueFunctionImp, size_t dimDomain>
+thread_local std::vector< typename LocalGodunovNumericalBoundaryFlux<AnalyticalFluxImp, BoundaryValueFunctionImp, dimDomain>::AffineFunctionType >
+    LocalGodunovNumericalBoundaryFlux<AnalyticalFluxImp, BoundaryValueFunctionImp, dimDomain>::jacobian_neg_function_(dimDomain,
+            typename LocalGodunovNumericalBoundaryFlux<AnalyticalFluxImp, BoundaryValueFunctionImp, dimDomain>::AffineFunctionType(
+            typename LocalGodunovNumericalBoundaryFlux<AnalyticalFluxImp, BoundaryValueFunctionImp, dimDomain>::FluxColumnJacobianRangeType(0)));
+
+template <class AnalyticalFluxImp, class BoundaryValueFunctionImp, size_t dimDomain>
+thread_local std::vector< typename LocalGodunovNumericalBoundaryFlux<AnalyticalFluxImp, BoundaryValueFunctionImp, dimDomain>::AffineFunctionType >
+    LocalGodunovNumericalBoundaryFlux<AnalyticalFluxImp, BoundaryValueFunctionImp, dimDomain>::jacobian_pos_function_(dimDomain,
+            typename LocalGodunovNumericalBoundaryFlux<AnalyticalFluxImp, BoundaryValueFunctionImp, dimDomain>::AffineFunctionType(
+            typename LocalGodunovNumericalBoundaryFlux<AnalyticalFluxImp, BoundaryValueFunctionImp, dimDomain>::FluxColumnJacobianRangeType(0)));
+
 template <class AnalyticalBoundaryFluxImp, class BoundaryValueFunctionImp, size_t domainDim>
-bool LocalGodunovNumericalBoundaryFlux<AnalyticalBoundaryFluxImp, BoundaryValueFunctionImp,
+thread_local bool LocalGodunovNumericalBoundaryFlux<AnalyticalBoundaryFluxImp, BoundaryValueFunctionImp,
                                        domainDim>::jacobians_constructed_(false);
 
 template <class AnalyticalBoundaryFluxImp, class BoundaryValueFunctionImp>
@@ -775,10 +807,8 @@ private:
       EigenMatrixType jacobian_pos_eigen(eigenvectors.real() * diag_jacobian_pos_tmp.backend()
                                          * eigenvectors_inverse.real());
       // set jacobian_neg_ and jacobian_pos_
-      jacobian_neg_ = DSC::from_string<Dune::FieldMatrix<RangeFieldType, dimRange, dimRange>>(
-          DSC::to_string(jacobian_neg_eigen, 15));
-      jacobian_pos_ = DSC::from_string<Dune::FieldMatrix<RangeFieldType, dimRange, dimRange>>(
-          DSC::to_string(jacobian_pos_eigen, 15));
+      jacobian_neg_ = jacobian_neg_eigen.operator FluxJacobianRangeType();
+      jacobian_pos_ = jacobian_pos_eigen.operator FluxJacobianRangeType();
       // jacobian_abs_ = jacobian_pos_ - jacobian_neg_;
       jacobian_abs_ = jacobian_neg_;
       jacobian_abs_ *= RangeFieldType(-1.0);
