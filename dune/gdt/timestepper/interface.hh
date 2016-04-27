@@ -205,6 +205,34 @@ public:
     return dt;
   } // ... solve(...)
 
+  virtual TimeFieldType next_n_steps(const size_t n, const TimeFieldType t_end, const TimeFieldType initial_dt, const bool output_progress, SolutionType& sol)
+  {
+    TimeFieldType dt = initial_dt;
+    TimeFieldType t = current_time();
+    assert(DSC::FloatCmp::ge(t_end - t, 0.0));
+    size_t time_step_counter = 0;
+
+    while (DSC::FloatCmp::lt(t, t_end) && time_step_counter < n) {
+      TimeFieldType max_dt = dt;
+      // match saving times and t_end exactly
+      if (DSC::FloatCmp::gt(t + dt, t_end))
+        max_dt = t_end - t;
+
+      // do a timestep
+      dt = step(dt, max_dt);
+      t  = current_time();
+
+      // augment time step counter
+      ++time_step_counter;
+
+      sol.insert(sol.end(), std::make_pair(t, current_solution()));
+      if (output_progress)
+        std::cout << "time step " << time_step_counter << " done, time =" << t << ", current dt= " << dt << std::endl;
+    } // while (t < t_end)
+
+    return dt;
+  } // ... next_n_steps(...)
+
   virtual TimeFieldType solve(const TimeFieldType t_end, const TimeFieldType initial_dt = 1e-4,
                               const size_t num_save_steps = -1, const bool save_solution = true,
                               const bool output_progress = false, const bool visualize = false,
@@ -246,13 +274,21 @@ public:
     return it->second;
   }
 
+  virtual const typename DiscreteFunctionType::VectorType& solution_vector_at_time(const TimeFieldType t) const
+  {
+    const auto it = solution().find(t);
+    if (it == solution().end())
+      DUNE_THROW(Dune::InvalidStateException,
+                 "There is no solution for time " + DSC::to_string(t) + " stored in this object!");
+    return it->second.vector();
+  }
+
   template <size_t factor = 0>
   void visualize_factor_of_solution(const std::string prefix = "") const
   {
     size_t counter = 0;
     for (const auto& pair : solution()) {
-      pair.second.template visualize_factor<factor>(
-          prefix + "factor_" + DSC::to_string(factor), DSC::to_string(counter), true);
+      pair.second.template visualize_factor<factor>(prefix, DSC::to_string(counter));
       ++counter;
     }
   }
@@ -264,6 +300,16 @@ public:
       pair.second.visualize(prefix, DSC::to_string(counter));
       ++counter;
     }
+  }
+
+  const std::vector< TimeFieldType > saved_time_steps()
+  {
+    std::vector< TimeFieldType > ret;
+    for (const auto& pair : *solution_)
+    {
+      ret.push_back(pair.first);
+    }
+    return ret;
   }
 
 private:
