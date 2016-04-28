@@ -332,11 +332,6 @@ int main(int argc, char* argv[])
 
 using namespace boost::python;
 
-//#include <boost/python/module.hpp>
-//#include <boost/python/def.hpp>
-//#include <boost/python/tuple.hpp>
-//#include <boost/python/to_python_converter.hpp>
-
 namespace {
 
   // Converts a std::pair instance to a Python tuple.
@@ -385,43 +380,41 @@ struct VectorExporter
 
   static void export_(const std::string& classname)
   {
-    void (VectorInterfaceType::*sub_void)(const derived_type&, derived_type&) const = &VectorInterfaceType::sub;
-    derived_type (VectorInterfaceType::*sub_vec)(const derived_type&) const = &VectorInterfaceType::sub;
-
-    void (VectorInterfaceType::*add_void)(const derived_type&, derived_type&) const = &VectorInterfaceType::add;
-    derived_type (VectorInterfaceType::*add_vec)(const derived_type&) const = &VectorInterfaceType::add;
-
     std_pair_to_python_converter<size_t, RealType>();
 
-    class_< VectorInterfaceType >("VectorInterface", no_init)
-        .def("size", &VectorInterfaceType::size)
-        .def("add_to_entry", &VectorInterfaceType::add_to_entry)
-        .def("__setitem__", &VectorInterfaceType::set_entry)
-        .def("__getitem__", &VectorInterfaceType::get_entry)
-        .def("l1_norm", &VectorInterfaceType::l1_norm)
-        .def("l2_norm", &VectorInterfaceType::l2_norm)
-        .def("sup_norm", &VectorInterfaceType::sup_norm)
-        .def("standard_deviation", &VectorInterfaceType::standard_deviation)
-        .def("set_all", &VectorInterfaceType::set_all)
-        .def("valid", &VectorInterfaceType::valid)
-        .def("dim", &VectorInterfaceType::dim)
-        .def("mean", &VectorInterfaceType::mean)
-        .def("amax", &VectorInterfaceType::amax)
+    void (Vec::*sub_void)(const derived_type&, derived_type&) const = &Vec::sub;
+    derived_type (Vec::*sub_vec)(const derived_type&) const = &Vec::sub;
+
+    void (Vec::*add_void)(const derived_type&, derived_type&) const = &Vec::add;
+    derived_type (Vec::*add_vec)(const derived_type&) const = &Vec::add;
+
+    class_< Vec >(classname.c_str())
+	.def(init<const size_t, const ScalarType>())
+        .def("size", &Vec::size)
+        .def("add_to_entry", &Vec::add_to_entry)
+        .def("__setitem__", &Vec::set_entry)
+        .def("__getitem__", &Vec::get_entry)
+        .def("l1_norm", &Vec::l1_norm)
+        .def("l2_norm", &Vec::l2_norm)
+        .def("sup_norm", &Vec::sup_norm)
+        .def("standard_deviation", &Vec::standard_deviation)
+        .def("set_all", &Vec::set_all)
+        .def("valid", &Vec::valid)
+        .def("dim", &Vec::dim)
+        .def("mean", &Vec::mean)
+        .def("amax", &Vec::amax)
         .def("sub", sub_void)
         .def("sub",sub_vec)
         .def("add", add_void)
         .def("add", add_vec)
         .def("__add__", add_vec)
         .def("__sub__", sub_vec)
-        .def("__iadd__", &VectorInterfaceType::iadd)
-        .def("__isub__", &VectorInterfaceType::isub)
-        .def("dot", &VectorInterfaceType::dot)
-        .def("__mul__", &VectorInterfaceType::dot)
+        .def("__iadd__", &Vec::iadd)
+        .def("__isub__", &Vec::isub)
+        .def("dot", &Vec::dot)
+        .def("__mul__", &Vec::dot)
         .def("buffer", &buffer)
         ;
-
-
-    class_<Vec, bases<typename Dune::Stuff::LA::VectorInterface< typename Vec::Traits, typename Vec::ScalarType >> >(classname.c_str(), no_init);
   }
 };
 
