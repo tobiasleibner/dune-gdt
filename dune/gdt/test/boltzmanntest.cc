@@ -135,9 +135,6 @@ public:
     visualize_solution_ = visualize_solution;
     file_path_ = output_dir;
     num_save_steps_ = num_save_steps;
-    // setup MPI
-  //  typedef Dune::MPIHelper MPIHelper;
-  //  MPIHelper::instance(argc, argv);
     // setup threadmanager
     DSC_CONFIG.set("threading.partition_factor", 1, true);
     DS::threadManager().set_max_threads(num_threads);
@@ -242,14 +239,21 @@ private:
 int main(int argc, char* argv[])
 {
   try {
+    // setup MPI
+    typedef Dune::MPIHelper MPIHelper;
+    MPIHelper::instance(argc, argv);
+
     // parse options
-    if (argc < 3) {
-      std::cerr << "Usage: " << argv[0] << "-threading.max_count THREADS [-global.datadir DIR -gridsize GRIDSIZE -sigma_s SIGMA_S_MATRIX -sigma_t SIGMA_T_MATRIX]" << std::endl;
+    if (argc%2 == 0) {
+      std::cerr << "Usage: " << argv[0] << "[-threading.max_count THREADS -global.datadir DIR -num_save_steps NUM -gridsize GRIDSIZE -no_visualization -silent -sigma_s SIGMA_S_MATRIX -sigma_t SIGMA_T_MATRIX]" << std::endl;
       return 1;
     }
 
     size_t num_threads = 1;
+    size_t num_save_steps = 10;
     size_t grid_size = 50;
+    bool visualize = true;
+    bool silent = false;
     std::string output_dir, sigma_s, sigma_t;
     for (int i = 1; i < argc; ++i) {
       if (std::string(argv[i]) == "-threading.max_count") {
@@ -264,6 +268,26 @@ int main(int argc, char* argv[])
           output_dir = argv[++i];
         } else {
           std::cerr << "-global.datadir option requires one argument." << std::endl;
+          return 1;
+        }
+      } else if (std::string(argv[i]) == "-num_save_steps") {
+        if (i + 1 < argc) {
+          num_save_steps = DSC::fromString< size_t >(argv[++i]);
+        } else {
+          std::cerr << "-num_save_steps option requires one argument." << std::endl;
+          return 1;
+        }
+      } else if (std::string(argv[i]) == "-no_visualization") {
+        visualize = false;
+        i++;
+      } else if (std::string(argv[i]) == "-silent") {
+        silent = true;
+        i++;
+      } else if (std::string(argv[i]) == "-num_save_steps") {
+        if (i + 1 < argc) {
+          num_save_steps = DSC::fromString< size_t >(argv[++i]);
+        } else {
+          std::cerr << "-num_save_steps option requires one argument." << std::endl;
           return 1;
         }
       } else if (std::string(argv[i]) == "-gridsize") {
@@ -293,8 +317,7 @@ int main(int argc, char* argv[])
       }
     }
 
-    BoltzmannSolver solver;
-    solver.init(num_threads, output_dir, 10, grid_size, true, false, sigma_s, sigma_t);
+    BoltzmannSolver solver(num_threads, output_dir, num_save_steps, grid_size, visualize, silent, sigma_s, sigma_t);
     solver.solve();
     return 0;
   } catch (Dune::Exception& e) {
@@ -308,6 +331,42 @@ int main(int argc, char* argv[])
 #include <boost/python/suite/indexing/vector_indexing_suite.hpp>
 
 using namespace boost::python;
+
+//#include <boost/python/module.hpp>
+//#include <boost/python/def.hpp>
+//#include <boost/python/tuple.hpp>
+//#include <boost/python/to_python_converter.hpp>
+
+namespace {
+
+  // Converts a std::pair instance to a Python tuple.
+  template <typename T1, typename T2>
+  struct std_pair_to_tuple
+  {
+    static PyObject* convert(std::pair<T1, T2> const& p)
+    {
+      return boost::python::incref(
+        boost::python::make_tuple(p.first, p.second).ptr());
+    }
+    static PyTypeObject const *get_pytype () {return &PyTuple_Type; }
+  };
+
+  // Helper for convenience.
+  template <typename T1, typename T2>
+  struct std_pair_to_python_converter
+  {
+    std_pair_to_python_converter()
+    {
+      boost::python::to_python_converter<
+        std::pair<T1, T2>,
+        std_pair_to_tuple<T1, T2>,
+        true //std_pair_to_tuple has get_pytype
+        >();
+    }
+  };
+
+} // namespace anonymous
+
 
 template <class Vec>
 struct VectorExporter
@@ -332,6 +391,8 @@ struct VectorExporter
     void (VectorInterfaceType::*add_void)(const derived_type&, derived_type&) const = &VectorInterfaceType::add;
     derived_type (VectorInterfaceType::*add_vec)(const derived_type&) const = &VectorInterfaceType::add;
 
+    std_pair_to_python_converter<size_t, RealType>();
+
     class_< VectorInterfaceType >("VectorInterface", no_init)
         .def("size", &VectorInterfaceType::size)
         .def("add_to_entry", &VectorInterfaceType::add_to_entry)
@@ -345,7 +406,7 @@ struct VectorExporter
         .def("valid", &VectorInterfaceType::valid)
         .def("dim", &VectorInterfaceType::dim)
         .def("mean", &VectorInterfaceType::mean)
-//        .def("amax", &VectorInterfaceType::amax)
+        .def("amax", &VectorInterfaceType::amax)
         .def("sub", sub_void)
         .def("sub",sub_vec)
         .def("add", add_void)
@@ -379,8 +440,6 @@ struct VectorExporter
 //  typedef internal::VectorInputIterator< Traits, ScalarType >  const_iterator;
 //  typedef internal::VectorOutputIterator< Traits, ScalarType > iterator;
 
-//  virtual ~VectorInterface() {}
-
 //  inline ScalarType& get_entry_ref(const size_t ii)
 
 //  inline const ScalarType& get_entry_ref(const size_t ii) const
@@ -388,8 +447,6 @@ struct VectorExporter
 //  inline ScalarType& operator[](const size_t ii)
 
 //  inline const ScalarType& operator[](const size_t ii) const
-
-//  virtual std::pair< size_t, RealType > amax() const
 
 //  virtual bool almost_equal(const derived_type& other,
 //                            const RealType epsilon = Stuff::Common::FloatCmp::DefaultEpsilon< RealType >::value()) const
@@ -413,14 +470,6 @@ struct VectorExporter
 //  virtual bool operator!=(const derived_type& other) const
 
 
-
-Dune::Stuff::LA::CommonDenseVector< double > test_vector()
-{
-  Dune::Stuff::LA::CommonDenseVector< double > vec(2, 0.0);
-  vec[1] = 3.0;
-  return vec;
-}
-
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(init_overloads, BoltzmannSolver::init, 0, 8)
 
 BOOST_PYTHON_MODULE(libboltzmann)
@@ -438,8 +487,6 @@ BOOST_PYTHON_MODULE(libboltzmann)
       ;
 
   VectorExporter< typename Dune::Stuff::LA::CommonDenseVector< double > >::export_("CommonDenseVector");
-
-  def("test_vector", test_vector);
 }
 
 
