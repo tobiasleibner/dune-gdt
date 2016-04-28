@@ -412,6 +412,9 @@ struct VectorExporter
         .def("dot", &Vec::dot)
         .def("__mul__", &Vec::dot)
         .def("buffer", &buffer)
+	.def("scal", &Vec::scal)
+	.def("axpy", &Vec::axpy)
+	.def("copy", &Vec::copy)
         ;
   }
 };
