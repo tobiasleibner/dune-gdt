@@ -10,6 +10,23 @@ from libboltzmann import CommonDenseVector
 IMPL_TYPES = (CommonDenseVector,)
 
 
+class Solver(object):
+
+    def __init__(self, *args):
+        self.impl = libboltzmann.BoltzmannSolver(*args)
+
+    def solve(self):
+        result = self.impl.solve()
+        return ListVectorArray(map(DuneStuffVector, result))
+
+    def next_n_time_steps(self, n):
+        result = self.impl.next_n_time_steps(n)
+        return ListVectorArray(map(DuneStuffVector, result))
+
+    def reset(self):
+        self.impl.reset()
+
+
 class DuneStuffVector(VectorInterface):
 
     def __init__(self, impl):
