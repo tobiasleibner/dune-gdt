@@ -244,10 +244,8 @@ int main(int argc, char* argv[])
     MPIHelper::instance(argc, argv);
 
     // parse options
-    if (argc%2 == 0) {
-      std::cerr << "Usage: " << argv[0] << "[-threading.max_count THREADS -global.datadir DIR -num_save_steps NUM -gridsize GRIDSIZE -no_visualization -silent -sigma_s SIGMA_S_MATRIX -sigma_t SIGMA_T_MATRIX]" << std::endl;
-      return 1;
-    }
+    if (argc == 1)
+      std::cout << "Usage: " << argv[0] << "[-threading.max_count THREADS -global.datadir DIR -num_save_steps NUM -gridsize GRIDSIZE -no_visualization -silent -sigma_s SIGMA_S_MATRIX -sigma_t SIGMA_T_MATRIX]" << std::endl;
 
     size_t num_threads = 1;
     size_t num_save_steps = 10;
