@@ -17,6 +17,7 @@
 #include <memory>
 #include <iostream>
 #include <fstream>
+#include <random>
 
 #include <boost/timer/timer.hpp>
 #include <boost/filesystem.hpp>
@@ -40,6 +41,35 @@
 #include <dune/gdt/test/hyperbolic/problems/2dboltzmann.hh>
 
 using namespace Dune::GDT;
+
+DSC::FieldMatrix< double, 7, 7 > create_random_sigma_s(const double lower_bound, const double upper_bound)
+{
+typedef std::mt19937 RandomNumberGeneratorType;  // the Mersenne Twister with a popular choice of parameters
+static RandomNumberGeneratorType rng{std::random_device()()};
+std::uniform_real_distribution<double> distribution(lower_bound,upper_bound);
+DSC::FieldMatrix< double, 7, 7 > ret;
+for (size_t ii = 0; ii < 7; ++ii) {
+  for (size_t jj = 0; jj < 7; ++jj) {
+    ret[ii][jj] = distribution(rng);
+  }
+}
+return ret;
+}
+
+DSC::FieldMatrix< double, 7, 7 > create_random_sigma_t(const double lower_bound, const double upper_bound, const DSC::FieldMatrix< double, 7, 7 >& sigma_s)
+{
+typedef std::mt19937 RandomNumberGeneratorType;  // the Mersenne Twister with a popular choice of parameters
+static RandomNumberGeneratorType rng{std::random_device()()};
+std::uniform_real_distribution<double> distribution(lower_bound, upper_bound);
+DSC::FieldMatrix< double, 7, 7 > ret;
+for (size_t ii = 0; ii < 7; ++ii) {
+  for (size_t jj = 0; jj < 7; ++jj) {
+    ret[ii][jj] = distribution(rng) + sigma_s[ii][jj];
+  }
+}
+return ret;
+}
+
 
 class BoltzmannSolver
 {
@@ -73,7 +103,7 @@ public:
   typedef typename Dune::GDT::ExplicitRungeKuttaTimeStepper<OperatorType, DiscreteFunctionType,
       double, TimeStepperMethods::explicit_euler> FluxTimeStepperType;
   typedef typename Dune::GDT::ExplicitRungeKuttaTimeStepper<RHSOperatorType, DiscreteFunctionType,
-      double, TimeStepperMethods::explicit_euler> RHSTimeStepperType;
+      double > RHSTimeStepperType;
   typedef typename Dune::GDT::FractionalTimeStepper<FluxTimeStepperType, RHSTimeStepperType> TimeStepperType;
   typedef typename TimeStepperType::SolutionType SolutionType;
   typedef std::vector< VectorType > SolutionVectorsVectorType;
@@ -82,7 +112,11 @@ public:
                   const size_t grid_size = 50, const bool visualize_solution = true, const bool silent = false,
                   const std::string sigma_s_in = "", const std::string sigma_t_in = "")
   {
-    init(num_threads, output_dir, num_save_steps, grid_size, visualize_solution, true, sigma_s_in, sigma_t_in);
+    auto random_sigma_s = create_random_sigma_s(0.0,10.0);
+    auto random_sigma_t = create_random_sigma_t(0.0,10.0, random_sigma_s);
+    auto sigma_s = sigma_s_in.empty() ? DSC::toString(random_sigma_s) : sigma_s_in;
+    auto sigma_t = sigma_t_in.empty() ? DSC::toString(random_sigma_t) : sigma_t_in;
+    init(num_threads, output_dir, num_save_steps, grid_size, visualize_solution, true, sigma_s, sigma_t);
     silent_ = silent;
   }
 
@@ -129,6 +163,12 @@ public:
             const size_t grid_size = 50, const bool visualize_solution = true, const bool silent = false,
             const std::string sigma_s_in = "", const std::string sigma_t_in = "")
   {
+#if HAVE_MPI
+    int initialized = 0;
+    MPI_Initialized(&initialized);
+    if (!initialized)
+      MPI_Init(NULL, NULL);
+#endif
     silent_ = silent;
     if (!silent_)
       std::cout << "Setting problem parameters ...";
@@ -239,10 +279,6 @@ private:
 int main(int argc, char* argv[])
 {
   try {
-    // setup MPI
-    typedef Dune::MPIHelper MPIHelper;
-    MPIHelper::instance(argc, argv);
-
     // parse options
     if (argc == 1)
       std::cout << "Usage: " << argv[0] << "[-threading.max_count THREADS -global.datadir DIR -num_save_steps NUM -gridsize GRIDSIZE -no_visualization -silent -sigma_s SIGMA_S_MATRIX -sigma_t SIGMA_T_MATRIX]" << std::endl;
@@ -253,6 +289,7 @@ int main(int argc, char* argv[])
     bool visualize = true;
     bool silent = false;
     std::string output_dir, sigma_s, sigma_t;
+    double sigma_s_lower = 0, sigma_s_upper = 1, sigma_a_lower = 0, sigma_a_upper = 10;
     for (int i = 1; i < argc; ++i) {
       if (std::string(argv[i]) == "-threading.max_count") {
         if (i + 1 < argc) { // Make sure we aren't at the end of argv!
@@ -309,14 +346,74 @@ int main(int argc, char* argv[])
           std::cerr << "-sigma_t option requires one argument." << std::endl;
           return 1;
         }
+      } else if (std::string(argv[i]) == "-sigma_s_lower") {
+        if (i + 1 < argc) {
+          sigma_s_lower = DSC::fromString<double>(argv[++i]);
+        } else {
+            std::cerr << "-sigma_s_lower option requires one argument." << std::endl;
+            return 1;
+          }
+      } else if (std::string(argv[i]) == "-sigma_s_upper") {
+        if (i + 1 < argc) {
+          sigma_s_upper = DSC::fromString<double>(argv[++i]);
+        } else {
+            std::cerr << "-sigma_s_upper option requires one argument." << std::endl;
+            return 1;
+          }
+      } else if (std::string(argv[i]) == "-sigma_a_lower") {
+        if (i + 1 < argc) {
+          sigma_a_lower = DSC::fromString<double>(argv[++i]);
+        } else {
+            std::cerr << "-sigma_a_lower option requires one argument." << std::endl;
+            return 1;
+          }
+      } else if (std::string(argv[i]) == "-sigma_a_upper") {
+        if (i + 1 < argc) {
+          sigma_a_upper = DSC::fromString<double>(argv[++i]);
+        } else {
+            std::cerr << "-sigma_a_upper option requires one argument." << std::endl;
+            return 1;
+          }
       } else {
         std::cerr << "Unknown option " << std::string(argv[i]) << std::endl;
         return 1;
       }
     }
 
-    BoltzmannSolver solver(num_threads, output_dir, num_save_steps, grid_size, visualize, silent, sigma_s, sigma_t);
-    solver.solve();
+    std::vector< double > acceptable_sigma_s_vector;
+    std::vector< double > rejected_sigma_s_vector;
+    std::vector< double > acceptable_sigma_a_vector;
+    std::vector< double > rejected_sigma_a_vector;
+
+    for (size_t ii = 0; ii < 50; ++ii) {
+      typedef std::mt19937 RandomNumberGeneratorType;  // the Mersenne Twister with a popular choice of parameters
+      static RandomNumberGeneratorType rng{std::random_device()()};
+      std::uniform_real_distribution<double> distribution(0,10);
+      const auto sigma_s_max = distribution(rng);
+      const auto sigma_a_max = distribution(rng);
+
+      auto random_sigma_s = create_random_sigma_s(0.0, sigma_s_max);
+      auto random_sigma_t = create_random_sigma_t(0.0, sigma_a_max, random_sigma_s);
+
+      BoltzmannSolver solver(num_threads, output_dir, 5, grid_size, false, true, DSC::toString(random_sigma_s), DSC::toString(random_sigma_t));
+      auto vec = solver.solve();
+
+      if (*std::max_element(vec[vec.size() - 1].begin(), vec[vec.size() - 1].end()) < 2.0 && *std::min_element(vec[vec.size() - 1].begin(), vec[vec.size() - 1].end()) > -2.0) {
+        acceptable_sigma_s_vector.push_back(sigma_s_max);
+        acceptable_sigma_a_vector.push_back(sigma_a_max);
+      } else {
+        rejected_sigma_s_vector.push_back(sigma_s_max);
+        rejected_sigma_a_vector.push_back(sigma_a_max);
+      }
+    }
+
+    std::cout << "Accepted sigma_s (min " << *std::min_element(acceptable_sigma_s_vector.begin(), acceptable_sigma_s_vector.end()) << ", max " << *std::max_element(acceptable_sigma_s_vector.begin(), acceptable_sigma_s_vector.end()) << ", mean " << std::accumulate(acceptable_sigma_s_vector.begin(), acceptable_sigma_s_vector.end(), 0.0)/(acceptable_sigma_s_vector.size()) << "):" << DSC::toString(acceptable_sigma_s_vector) << std::endl;
+    std::cout << "Accepted sigma_a (min " << *std::min_element(acceptable_sigma_a_vector.begin(), acceptable_sigma_a_vector.end()) << ", max " << *std::max_element(acceptable_sigma_a_vector.begin(), acceptable_sigma_a_vector.end()) << ", mean " << std::accumulate(acceptable_sigma_a_vector.begin(), acceptable_sigma_a_vector.end(), 0.0)/(acceptable_sigma_a_vector.size()) << "):" << DSC::toString(acceptable_sigma_a_vector) << std::endl;
+    std::cout << "Rejected sigma_s (min " << *std::min_element(rejected_sigma_s_vector.begin(), rejected_sigma_s_vector.end()) << ", max " << *std::max_element(rejected_sigma_s_vector.begin(), rejected_sigma_s_vector.end()) << ", mean " << std::accumulate(rejected_sigma_s_vector.begin(), rejected_sigma_s_vector.end(), 0.0)/(rejected_sigma_s_vector.size()) << "):" << DSC::toString(rejected_sigma_s_vector) << std::endl;
+    std::cout << "Rejected sigma_a (min " << *std::min_element(rejected_sigma_a_vector.begin(), rejected_sigma_a_vector.end()) << ", max " << *std::max_element(rejected_sigma_a_vector.begin(), rejected_sigma_a_vector.end()) << ", mean " << std::accumulate(rejected_sigma_a_vector.begin(), rejected_sigma_a_vector.end(), 0.0)/(rejected_sigma_a_vector.size()) << "):" << DSC::toString(rejected_sigma_a_vector) << std::endl;
+
+
+
     return 0;
   } catch (Dune::Exception& e) {
     std::cerr << "Dune reported: " << e.what() << std::endl;
