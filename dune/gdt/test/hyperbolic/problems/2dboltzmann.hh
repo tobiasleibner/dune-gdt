@@ -347,7 +347,7 @@ protected:
   public:
     using BaseType::GetData::precision; // precision for to_string
 
-    // rhs is q - (\Sigma_s \delta_{l0}\delta{m0} - \Sigma_t) * \psi_l^m
+    // rhs is q + (\Sigma_s \delta_{l0}\delta{m0} - \Sigma_t) * \psi_l^m
     // see the Checkerboard test case in http://www.sciencedirect.com/science/article/pii/S0021999105002275?np=y
     // q = 0 except in the center where q = 1. Sigma_s = Sigma_t = 1 in scattering regions, Sigma_s = 0, Sigma_t
     // = 10 in absorbing regions. Center is also a scattering region.
