@@ -112,11 +112,14 @@ public:
                   const size_t grid_size = 50, const bool visualize_solution = true, const bool silent = false,
                   const std::string sigma_s_in = "", const std::string sigma_t_in = "")
   {
+    auto num_save_steps_copy = num_save_steps;
+    if (num_save_steps > 1e6)
+        num_save_steps_copy = size_t(-1);
     auto random_sigma_s = create_random_sigma_s(0.0,10.0);
     auto random_sigma_t = create_random_sigma_t(0.0,10.0, random_sigma_s);
     auto sigma_s = sigma_s_in.empty() ? DSC::toString(random_sigma_s) : sigma_s_in;
     auto sigma_t = sigma_t_in.empty() ? DSC::toString(random_sigma_t) : sigma_t_in;
-    init(num_threads, output_dir, num_save_steps, grid_size, visualize_solution, true, sigma_s, sigma_t);
+    init(num_threads, output_dir, num_save_steps_copy, grid_size, visualize_solution, true, sigma_s, sigma_t);
     silent_ = silent;
   }
 

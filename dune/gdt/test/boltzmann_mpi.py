@@ -31,7 +31,7 @@ if rank_proc == 0:
 comm_rank_0_group = MPI.Intracomm.Split(comm_world, contained_in_rank_0_group, rank_world)
 
 # calculate Boltzmann problem trajectory (using one thread per process)
-solver = wrapper.Solver(1, "boltzmann", -1, 200, false, true)
+solver = wrapper.Solver(1, "boltzmann", 2000000, 200, False, True)
 result = solver.solve()
 
 # get pod modes from each trajectory
