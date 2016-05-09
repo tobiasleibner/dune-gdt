@@ -212,6 +212,11 @@ public:
     assert(DSC::FloatCmp::ge(t_end - t, 0.0));
     size_t time_step_counter = 0;
 
+    if (DSC::FloatCmp::eq(t, 0.0)) {
+      sol.insert(sol.end(), std::make_pair(t, current_solution()));
+      ++time_step_counter;
+    }
+
     while (DSC::FloatCmp::lt(t, t_end) && time_step_counter < n) {
       TimeFieldType max_dt = dt;
       // match saving times and t_end exactly
