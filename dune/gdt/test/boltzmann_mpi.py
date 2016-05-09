@@ -23,13 +23,28 @@ rank_proc = comm_proc.Get_rank()
 contained_in_rank_0_group = 1 if rank_proc == 0 else 0
 comm_rank_0_group = MPI.Intracomm.Split(comm_world, contained_in_rank_0_group, rank_world)
 
+# snapshot parameters
+sigma_s_scattering_range = range(0, 11, 3)
+sigma_s_absorbing_range = range(0, 8, 3)
+sigma_a_scattering_range = range(0, 11, 3)
+sigma_a_absorbing_range = range(0, 11, 3)
+
+parameters_list=[]
+for sigma_s_scattering in sigma_s_scattering_range:
+    for sigma_s_absorbing in sigma_s_absorbing_range:
+        for sigma_a_scattering in sigma_a_scattering_range:
+            for sigma_a_absorbing in sigma_a_absorbing_range:
+                parameters_list.append([sigma_s_scattering, sigma_s_absorbing, sigma_s_scattering+sigma_a_scattering, sigma_s_absorbing+sigma_a_absorbing])
+
+parameters=comm_world.scatter(parameters_list, root=0)
+
 # calculate Boltzmann problem trajectory (using one thread per process)
-solver = wrapper.Solver(1, "boltzmann", 2000000, 50, False, False)
+solver=wrapper.Solver(1, "/scratch/tmp/l_tobi01/boltzmann_sigma_s_s_" + str(parameters[0]) + "_a_" + str(parameters[1]) + "sigma_t_s_" + str(parameters[2]) + "_a_" + str(parameters[3]), 2000000, 100, False, False, parameters[0], parameters[1], parameters[2], parameters[3])
 result = solver.solve()
 num_snapshots=len(result)
 
 # get pod modes from each trajectory
-epsilon_ast = 4e-4
+epsilon_ast = 4e-8
 omega=0.5
 rooted_tree_depth=3
 modes, singular_values = pod(result, atol=0., rtol=0., l2_mean_err=epsilon_ast*omega/np.sqrt(rooted_tree_depth-1))
