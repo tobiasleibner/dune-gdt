@@ -357,7 +357,9 @@ protected:
              || ((row == 3 || row == 5) && (col == 1 || col == 5));
     }
 
-    static void create_rhs_values(ConfigType& rhs_config)
+    static void create_rhs_values(ConfigType& rhs_config, const RangeFieldImp sigma_s_scattering = 1,
+                                  const RangeFieldImp sigma_s_absorbing = 0, const RangeFieldImp sigma_t_scattering = 1,
+                                  const RangeFieldImp sigma_t_absorbing = 10)
     {
       rhs_config["lower_left"]   = "[0.0 0.0]";
       rhs_config["upper_right"]  = "[7.0 7.0]";
@@ -371,16 +373,16 @@ protected:
           if (row == 3 && col == 3) { // center
             q *= 0;
             q[0]    = 1;
-            Sigma_s = 1;
-            Sigma_t = 1;
+            Sigma_s = sigma_s_scattering;
+            Sigma_t = sigma_t_scattering;
           } else if (is_absorbing(row, col)) { // absorbing regions
             q *= 0;
-            Sigma_s = 0;
-            Sigma_t = 10;
+            Sigma_s = sigma_s_absorbing;
+            Sigma_t = sigma_t_absorbing;
           } else { // scattering regions (without center)
             q *= 0;
-            Sigma_s = 1;
-            Sigma_t = 1;
+            Sigma_s = sigma_s_scattering;
+            Sigma_t = sigma_t_scattering;
           }
           S *= 0.0;
           S[pos(0, 0)][pos(0, 0)] = Sigma_s - Sigma_t;
@@ -469,29 +471,38 @@ public:
     return Stuff::Common::make_unique<ThisType>(flux, rhs, initial_values, grid_config, boundary_info, boundary_values);
   } // ... create(...)
 
-
-  static ConfigType default_checkerboard_parameters()
+  static ConfigType default_config(const RangeFieldImp sigma_s_scattering = 1,
+                                   const RangeFieldImp sigma_s_absorbing = 0, const RangeFieldImp sigma_t_scattering = 1,
+                                   const RangeFieldImp sigma_t_absorbing = 10, const std::string sub_name = "")
   {
     ConfigType config;
-    config["sigma_s"] = std::string("[1 1 1 1 1 1 1; ")
-                                  +  "1 0 1 0 1 0 1; "
-                                  +  "1 1 0 1 0 1 1; "
-                                  +  "1 0 1 1 1 0 1; "
-                                  +  "1 1 0 1 0 1 1; "
-                                  +  "1 0 1 1 1 0 1; "
-                                  +  "1 1 1 1 1 1 1]";
-    config["sigma_t"] = std::string("[1  1  1  1  1  1  1; ")
-                                  +  "1 10  1 10  1 10  1; "
-                                  +  "1  1 10  1 10  1  1; "
-                                  +  "1 10  1  1  1 10  1; "
-                                  +  "1  1 10  1 10  1  1; "
-                                  +  "1 10  1  1  1 10  1; "
-                                  +  "1  1  1  1  1  1  1]";
-    return config;
-  }
+    config.add(default_grid_config(), "grid");
+    config.add(default_boundary_info_config(), "boundary_info");
+    ConfigType flux_config = BaseType::default_config().sub("flux");
+    config.add(flux_config, "flux");
+    ConfigType rhs_config;
+    GetData::create_rhs_values(rhs_config, sigma_s_scattering, sigma_s_absorbing, sigma_t_scattering, sigma_t_absorbing);
+    config.add(rhs_config, "rhs");
+    ConfigType initial_value_config;
+    initial_value_config["lower_left"]   = "[0.0 0.0]";
+    initial_value_config["upper_right"]  = "[7.0 7.0]";
+    initial_value_config["num_elements"] = "[1 1]";
+    initial_value_config["variable"]     = "x";
+    initial_value_config["values.0"]     = GetData::create_initial_values();
+    initial_value_config["name"] = static_id();
+    config.add(initial_value_config, "initial_values");
+    ConfigType boundary_value_config = BaseType::default_config().sub("boundary_values");
+    config.add(boundary_value_config, "boundary_values");
+    if (sub_name.empty())
+      return config;
+    else {
+      ConfigType tmp;
+      tmp.add(config, sub_name);
+      return tmp;
+    }
+  } // ... default_config(...)
 
-
-  static ConfigType default_config(const ConfigType checkerboard_config = default_checkerboard_parameters(), const std::string sub_name = "")
+  static ConfigType default_config(const ConfigType checkerboard_config, const std::string sub_name = "")
   {
     ConfigType config;
     config.add(default_grid_config(), "grid");

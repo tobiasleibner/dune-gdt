@@ -26,6 +26,9 @@ class Solver(object):
     def reset(self):
         self.impl.reset()
 
+    def finished(self):
+        self.impl.finished()
+
 
 class DuneStuffVector(VectorInterface):
 

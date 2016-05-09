@@ -108,9 +108,9 @@ public:
   typedef typename TimeStepperType::SolutionType SolutionType;
   typedef std::vector< VectorType > SolutionVectorsVectorType;
 
-  BoltzmannSolver(const size_t num_threads = 1, const std::string output_dir = "boltzmann", const size_t num_save_steps = 10,
-                  const size_t grid_size = 50, const bool visualize_solution = true, const bool silent = false,
-                  const std::string sigma_s_in = "", const std::string sigma_t_in = "")
+  BoltzmannSolver(const size_t num_threads, const std::string output_dir, const size_t num_save_steps,
+                  const size_t grid_size, const bool visualize_solution, const bool silent,
+                  const std::string sigma_s_in, const std::string sigma_t_in)
   {
     auto num_save_steps_copy = num_save_steps;
     if (num_save_steps > 1e6)
@@ -119,7 +119,27 @@ public:
     auto random_sigma_t = create_random_sigma_t(0.0,10.0, random_sigma_s);
     auto sigma_s = sigma_s_in.empty() ? DSC::toString(random_sigma_s) : sigma_s_in;
     auto sigma_t = sigma_t_in.empty() ? DSC::toString(random_sigma_t) : sigma_t_in;
-    init(num_threads, output_dir, num_save_steps_copy, grid_size, visualize_solution, true, sigma_s, sigma_t);
+
+    //create problem configuration
+    ConfigType checkerboard_config;
+    checkerboard_config["sigma_s"] = sigma_s;
+    checkerboard_config["sigma_t"] = sigma_t;
+    const auto problem_config = ProblemType::default_config(checkerboard_config);
+
+    init(num_threads, output_dir, num_save_steps_copy, grid_size, visualize_solution, true, problem_config);
+    silent_ = silent;
+  }
+
+  BoltzmannSolver(const size_t num_threads = 1, const std::string output_dir = "boltzmann", const size_t num_save_steps = 10,
+                  const size_t grid_size = 50, const bool visualize_solution = true, const bool silent = false,
+                  const RangeFieldType sigma_s_scattering = 1, const RangeFieldType sigma_s_absorbing = 0,
+                  const RangeFieldType sigma_t_scattering = 1, const RangeFieldType sigma_t_absorbing = 10)
+  {
+    auto num_save_steps_copy = num_save_steps;
+    if (num_save_steps > 1e6)
+        num_save_steps_copy = size_t(-1);
+    const auto problem_config = ProblemType::default_config(sigma_s_scattering, sigma_s_absorbing, sigma_t_scattering, sigma_t_absorbing);
+    init(num_threads, output_dir, num_save_steps_copy, grid_size, visualize_solution, true, problem_config);
     silent_ = silent;
   }
 
@@ -162,9 +182,14 @@ public:
     return ret;
   }
 
+  bool finished()
+  {
+    return DSC::FloatCmp::eq(timestepper_->current_time(), 3.2);
+  }
+
   void init(const size_t num_threads = 1, const std::string output_dir = "boltzmann", const size_t num_save_steps = 10,
             const size_t grid_size = 50, const bool visualize_solution = true, const bool silent = false,
-            const std::string sigma_s_in = "", const std::string sigma_t_in = "")
+            const ConfigType problem_config = ProblemType::default_config())
   {
 #if HAVE_MPI
     int initialized = 0;
@@ -186,14 +211,7 @@ public:
     DSC_PROFILER.setOutputdir(output_dir);
     //choose GridType
 
-    std::string sigma_s = sigma_s_in.empty() ? ProblemType::default_checkerboard_parameters()["sigma_s"] : sigma_s_in;
-    std::string sigma_t = sigma_t_in.empty() ? ProblemType::default_checkerboard_parameters()["sigma_t"] : sigma_t_in;
-
-    //create Problem
-    ConfigType checkerboard_config;
-    checkerboard_config["sigma_s"] = sigma_s;
-    checkerboard_config["sigma_t"] = sigma_t;
-    const auto problem_ptr = ProblemType::create(ProblemType::default_config(checkerboard_config));
+    const auto problem_ptr = ProblemType::create(problem_config);
     const auto& problem = *problem_ptr;
 
     //get grid configuration from problem
@@ -564,15 +582,17 @@ struct VectorExporter
 //  virtual bool operator!=(const derived_type& other) const
 
 
-BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(init_overloads, BoltzmannSolver::init, 0, 8)
+BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(init_overloads, BoltzmannSolver::init, 0, 7)
 
 BOOST_PYTHON_MODULE(libboltzmann)
 {
-  class_<BoltzmannSolver>("BoltzmannSolver", init< optional< const size_t, const std::string, const size_t, const size_t, const bool, const bool, const std::string, const std::string > >())
+  class_<BoltzmannSolver>("BoltzmannSolver", init< optional< const size_t, const std::string, const size_t, const size_t, const bool, const bool, const double, const double, const double, const double > >())
+       .def(init< const size_t, const std::string, const size_t, const size_t, const bool, const bool, const std::string, const std::string >())
        .def("init", &BoltzmannSolver::init, init_overloads())
        .def("solve", &BoltzmannSolver::solve)
        .def("next_n_time_steps", &BoltzmannSolver::next_n_time_steps)
        .def("reset", &BoltzmannSolver::reset)
+       .def("finished", &BoltzmannSolver::finished)
       ;
 
   class_<typename BoltzmannSolver::SolutionVectorsVectorType>("SolutionVectorsVectorType")
