@@ -77,27 +77,31 @@ if rank_proc == 0:
     comm_proc.Gatherv(modes.data, [modes_on_proc, counts, displacements, MPI.DOUBLE], root=0)
 else:
     comm_proc.Gatherv(modes.data, None, root=0)
+    del modes
 
 # create a pyMOR VectorArray from modes_on_proc and perform the second pod
 num_modes_on_proc_after_pod = 0
 if rank_proc == 0:
     modes_on_proc_joined = modes.zeros(len(modes_on_proc))
+    del modes
     for v, vv in zip(modes_on_proc_joined._list, modes_on_proc):
         v.data[:] = vv
+    del modes_on_proc
     epsilon_T_alpha = epsilon_ast*omega*np.sqrt(num_snapshots_on_proc/(num_modes_on_proc_before_pod*(rooted_tree_depth-1)))
     second_modes, second_singular_values = pod(modes_on_proc_joined, atol=0., rtol=0., l2_mean_err=epsilon_T_alpha)
+    del modes_on_proc_joined
     second_modes.scal(second_singular_values)
     num_modes_on_proc_after_pod = len(second_modes)
     print("memory used 1: ", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.0)
 
 ######### gather all (scaled) pod modes from second pod on world rank 0 and perform a third pod with the joined pod modes
-total_num_snapshots = comm_rank_0_group.reduce(num_snapshots_on_proc, op=MPI.SUM, root=0) if rank_world == 0 else 0
-total_num_modes = comm_rank_0_group.reduce(num_modes_on_proc_after_pod, op=MPI.SUM, root=0) if rank_world == 0 else 0
+total_num_snapshots = comm_rank_0_group.reduce(num_snapshots_on_proc, op=MPI.SUM, root=0) if rank_proc == 0 else None
+total_num_modes = comm_rank_0_group.reduce(num_modes_on_proc_after_pod, op=MPI.SUM, root=0) if rank_proc == 0 else None
 all_second_modes = np.empty(shape=(total_num_modes,vector_length)) if rank_world == 0 else None
 
+counts=comm_rank_0_group.gather(num_modes_on_proc_after_pod*vector_length, root=0)
 if rank_proc == 0:
     if rank_world == 0:
-        counts=comm_rank_0_group.gather(num_modes_on_proc_after_pod*vector_length, root=0)
         displacements=[0.]
         for i, count in enumerate(counts[0:len(counts)-1]):
             displacements.append(displacements[i]+count)
@@ -105,14 +109,18 @@ if rank_proc == 0:
         print("memory used 2: ", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.0)
     else:
         comm_rank_0_group.Gatherv(second_modes.data, None, root=0)
+        del second_modes
 
 final_modes=0
 if rank_world == 0:
-    all_second_modes_joined = modes.zeros(total_num_modes)
+    all_second_modes_joined = second_modes.zeros(total_num_modes)
+    del second_modes
     for v, vv in zip(all_second_modes_joined._list, all_second_modes):
         v.data[:] = vv
+    del all_second_modes
     epsilon_T_gamma = epsilon_ast*(1-omega)*np.sqrt(total_num_snapshots/total_num_modes)
     final_modes, final_singular_values = pod(all_second_modes_joined, atol=0., rtol=0., l2_mean_err=epsilon_T_gamma)
+    del all_second_modes_joined
     print("memory used 3: ", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.0)
     print(final_singular_values)
     #final_modes.scal(final_singular_values)
