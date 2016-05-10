@@ -52,33 +52,38 @@ omega=0.5
 rooted_tree_depth=3
 modes, singular_values = pod(result, atol=0., rtol=0., l2_mean_err=epsilon_ast*omega/np.sqrt(rooted_tree_depth-1))
 modes.scal(singular_values)
+num_modes = len(modes)
 
 # gather scaled pod modes from trajectories on processor, join to one VectorArray and perform a second pod per processor
 num_snapshots_on_proc = comm_proc.reduce(num_snapshots, op=MPI.SUM, root=0)
-modes_on_proc = np.empty(shape=(num_snapshots_on_proc,vector_length)) if rank_proc == 0 else np.empty(shape=(0,0))
+num_modes_on_proc_before_pod = comm_proc.reduce(num_modes, op=MPI.SUM, root=0)
+modes_on_proc = np.empty(shape=(num_modes_on_proc_before_pod,vector_length)) if rank_proc == 0 else np.empty(shape=(0,0))
 comm_proc.Gather(modes.data, modes_on_proc, root=0)
+num_modes_on_proc_after_pod = 0
 if rank_proc == 0:
     modes_on_proc_joined = modes.zeros(len(modes_on_proc))
     for v, vv in zip(modes_on_proc_joined._list, modes_on_proc):
         v.data[:] = vv
-    epsilon_T_alpha = epsilon_ast*omega*np.sqrt(num_snapshots_on_proc/(len(modes_on_proc_joined)*(rooted_tree_depth-1)))
+    epsilon_T_alpha = epsilon_ast*omega*np.sqrt(num_snapshots_on_proc/(num_modes_on_proc_before_pod*(rooted_tree_depth-1)))
     second_modes, second_singular_values = pod(modes_on_proc_joined, atol=0., rtol=0., l2_mean_err=epsilon_T_alpha)
     second_modes.scal(second_singular_values)
+    num_modes_on_proc_after_pod = len(second_modes)
     print("memory used 1: ", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.0)
 
 # gather all scaled pod modes from second pod on world rank 0 and perform a third pod with the joined pod modes
 total_num_snapshots = comm_rank_0_group.reduce(num_snapshots_on_proc, op=MPI.SUM, root=0) if rank_world == 0 else 0
-all_second_modes = np.empty(shape=(total_num_snapshots,vector_length)) if rank_world == 0 else np.empty(shape=(0,0))
+total_num_modes = comm_rank_0_group.reduce(num_modes_on_proc_after_pod, op=MPI.SUM, root=0) if rank_world == 0 else 0
+all_second_modes = np.empty(shape=(total_num_modes,vector_length)) if rank_world == 0 else np.empty(shape=(0,0))
 if rank_proc == 0:
     comm_rank_0_group.Gather(second_modes.data, all_second_modes, root=0)
     print("memory used 2: ", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.0)
 
 final_modes=0
 if rank_world == 0:
-    all_second_modes_joined = modes.zeros(len(all_second_modes))
+    all_second_modes_joined = modes.zeros(total_num_modes)
     for v, vv in zip(all_second_modes_joined._list, all_second_modes):
         v.data[:] = vv
-    epsilon_T_gamma = epsilon_ast*(1-omega)*np.sqrt(total_num_snapshots/len(all_second_modes_joined))
+    epsilon_T_gamma = epsilon_ast*(1-omega)*np.sqrt(total_num_snapshots/total_num_modes)
     final_modes, final_singular_values = pod(all_second_modes_joined, atol=0., rtol=0., l2_mean_err=epsilon_T_gamma)
     print("memory used 3: ", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.0)
     print(final_singular_values)
