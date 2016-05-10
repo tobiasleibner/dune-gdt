@@ -437,6 +437,15 @@ public:
         analytical_flux_, is_linear_, use_linear_reconstruction_, eigenvectors_, eigenvectors_inverse_);
   }
 
+  template< class LocalizableFunctionType >
+  AdvectionGodunovOperator(const AnalyticalFluxType& analytical_flux,
+                                 const BoundaryValueFunctionType& boundary_values, const LocalizableFunctionType& /*dx*/,
+                                 const double /*dt*/, const bool is_linear   = false,
+                                 const bool use_linear_reconstruction    = false)
+    : AdvectionGodunovOperator(analytical_flux, boundary_values, is_linear, use_linear_reconstruction)
+  {
+  }
+
   template <class SourceType, class RangeType>
   void apply(const SourceType& source, RangeType& range, const double time = 0.0) const
   {

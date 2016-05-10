@@ -98,7 +98,7 @@ public:
   typedef typename Dune::Stuff::LA::CommonDenseVector< RangeFieldType > VectorType;
   typedef DiscreteFunction< FVSpaceType, VectorType > DiscreteFunctionType;
   typedef typename Dune::Stuff::Functions::Constant< EntityType, DomainFieldType, dimDomain, RangeFieldType, dimRange, 1 > ConstantFunctionType;
-  typedef typename Dune::GDT::AdvectionGodunovOperator< AnalyticalFluxType, BoundaryValueType > OperatorType;
+  typedef typename Dune::GDT::AdvectionLaxFriedrichsOperator< AnalyticalFluxType, BoundaryValueType, ConstantFunctionType > OperatorType;
   typedef typename Dune::GDT::AdvectionRHSOperator< RHSType > RHSOperatorType;
   typedef typename Dune::GDT::ExplicitRungeKuttaTimeStepper<OperatorType, DiscreteFunctionType,
       double, TimeStepperMethods::explicit_euler> FluxTimeStepperType;
@@ -182,6 +182,31 @@ public:
     return ret;
   }
 
+  VectorType apply_LF_operator(VectorType source, const double time)
+  {
+    const DiscreteFunctionType source_function(*fv_space_, source);
+    VectorType ret(source);
+    DiscreteFunctionType range_function(*fv_space_, ret);
+    advection_operator_->apply(source_function, range_function, time);
+    return ret;
+  }
+
+  VectorType apply_rhs_operator(VectorType source, const double time)
+  {
+    const DiscreteFunctionType source_function(*fv_space_, source);
+    VectorType ret(source);
+    DiscreteFunctionType range_function(*fv_space_, ret);
+    rhs_operator_->apply(source_function, range_function, time);
+    return ret;
+  }
+
+  VectorType get_initial_values()
+  {
+    DiscreteFunctionType ret(*fv_space_, "discrete_initial_values");
+    project(*initial_values_, ret);
+    return ret.vector();
+  }
+
   bool finished()
   {
     return DSC::FloatCmp::eq(timestepper_->current_time(), 3.2);
@@ -249,14 +274,14 @@ public:
 
     //calculate dx and choose t_end and initial dt
     Dune::Stuff::Grid::Dimensions< GridViewType > dimensions(*grid_view_);
-    const double dx = dimensions.entity_width.max();
+    const double dx = dimensions.entity_width.max()/std::sqrt(2);
     const double CFL = problem.CFL();
     dt_ = CFL*dx;
     t_end_ = problem.t_end();
 
     //create Operators
-//    ConstantFunctionType dx_function(dx);
-    advection_operator_ = std::make_shared< OperatorType >(*analytical_flux_, *boundary_values_, true, false, false);
+    dx_function_ = std::make_shared< ConstantFunctionType>(dx);
+    advection_operator_ = std::make_shared< OperatorType >(*analytical_flux_, *boundary_values_, *dx_function_, dt_, true, false);
     rhs_operator_ = std::make_shared< RHSOperatorType >(*rhs_);
 
     //create timestepper
@@ -288,6 +313,7 @@ private:
   std::shared_ptr< FluxTimeStepperType > flux_timestepper_;
   std::shared_ptr< RHSTimeStepperType > rhs_timestepper_;
   std::shared_ptr< TimeStepperType > timestepper_;
+  std::shared_ptr< ConstantFunctionType > dx_function_;
   double t_end_;
   double dt_;
   bool silent_;
@@ -401,39 +427,8 @@ int main(int argc, char* argv[])
       }
     }
 
-    std::vector< double > acceptable_sigma_s_vector;
-    std::vector< double > rejected_sigma_s_vector;
-    std::vector< double > acceptable_sigma_a_vector;
-    std::vector< double > rejected_sigma_a_vector;
-
-    for (size_t ii = 0; ii < 50; ++ii) {
-      typedef std::mt19937 RandomNumberGeneratorType;  // the Mersenne Twister with a popular choice of parameters
-      static RandomNumberGeneratorType rng{std::random_device()()};
-      std::uniform_real_distribution<double> distribution(0,10);
-      const auto sigma_s_max = distribution(rng);
-      const auto sigma_a_max = distribution(rng);
-
-      auto random_sigma_s = create_random_sigma_s(0.0, sigma_s_max);
-      auto random_sigma_t = create_random_sigma_t(0.0, sigma_a_max, random_sigma_s);
-
-      BoltzmannSolver solver(num_threads, output_dir, 5, grid_size, false, true, DSC::toString(random_sigma_s), DSC::toString(random_sigma_t));
-      auto vec = solver.solve();
-
-      if (*std::max_element(vec[vec.size() - 1].begin(), vec[vec.size() - 1].end()) < 2.0 && *std::min_element(vec[vec.size() - 1].begin(), vec[vec.size() - 1].end()) > -2.0) {
-        acceptable_sigma_s_vector.push_back(sigma_s_max);
-        acceptable_sigma_a_vector.push_back(sigma_a_max);
-      } else {
-        rejected_sigma_s_vector.push_back(sigma_s_max);
-        rejected_sigma_a_vector.push_back(sigma_a_max);
-      }
-    }
-
-    std::cout << "Accepted sigma_s (min " << *std::min_element(acceptable_sigma_s_vector.begin(), acceptable_sigma_s_vector.end()) << ", max " << *std::max_element(acceptable_sigma_s_vector.begin(), acceptable_sigma_s_vector.end()) << ", mean " << std::accumulate(acceptable_sigma_s_vector.begin(), acceptable_sigma_s_vector.end(), 0.0)/(acceptable_sigma_s_vector.size()) << "):" << DSC::toString(acceptable_sigma_s_vector) << std::endl;
-    std::cout << "Accepted sigma_a (min " << *std::min_element(acceptable_sigma_a_vector.begin(), acceptable_sigma_a_vector.end()) << ", max " << *std::max_element(acceptable_sigma_a_vector.begin(), acceptable_sigma_a_vector.end()) << ", mean " << std::accumulate(acceptable_sigma_a_vector.begin(), acceptable_sigma_a_vector.end(), 0.0)/(acceptable_sigma_a_vector.size()) << "):" << DSC::toString(acceptable_sigma_a_vector) << std::endl;
-    std::cout << "Rejected sigma_s (min " << *std::min_element(rejected_sigma_s_vector.begin(), rejected_sigma_s_vector.end()) << ", max " << *std::max_element(rejected_sigma_s_vector.begin(), rejected_sigma_s_vector.end()) << ", mean " << std::accumulate(rejected_sigma_s_vector.begin(), rejected_sigma_s_vector.end(), 0.0)/(rejected_sigma_s_vector.size()) << "):" << DSC::toString(rejected_sigma_s_vector) << std::endl;
-    std::cout << "Rejected sigma_a (min " << *std::min_element(rejected_sigma_a_vector.begin(), rejected_sigma_a_vector.end()) << ", max " << *std::max_element(rejected_sigma_a_vector.begin(), rejected_sigma_a_vector.end()) << ", mean " << std::accumulate(rejected_sigma_a_vector.begin(), rejected_sigma_a_vector.end(), 0.0)/(rejected_sigma_a_vector.size()) << "):" << DSC::toString(rejected_sigma_a_vector) << std::endl;
-
-
+    BoltzmannSolver solver(num_threads, output_dir, 5, grid_size, true, false);
+    solver.solve();
 
     return 0;
   } catch (Dune::Exception& e) {
@@ -593,6 +588,9 @@ BOOST_PYTHON_MODULE(libboltzmann)
        .def("next_n_time_steps", &BoltzmannSolver::next_n_time_steps)
        .def("reset", &BoltzmannSolver::reset)
        .def("finished", &BoltzmannSolver::finished)
+       .def("apply_LF_operator", &BoltzmannSolver::apply_LF_operator)
+       .def("apply_rhs_operator", &BoltzmannSolver::apply_rhs_operator)
+       .def("get_initial_values", &BoltzmannSolver::get_initial_values)
       ;
 
   class_<typename BoltzmannSolver::SolutionVectorsVectorType>("SolutionVectorsVectorType")
