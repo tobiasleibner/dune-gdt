@@ -29,6 +29,23 @@ class Solver(object):
     def finished(self):
         self.impl.finished()
 
+    def current_time(self):
+        return self.impl.current_time()
+
+    def time_step_length(self):
+        return self.impl.time_step_length()
+
+    def get_initial_values(self):
+        return DuneStuffVector(self.impl.get_initial_values())
+
+    def apply_LF_operator(self, source, time):
+        return DuneStuffVector(self.impl.apply_LF_operator(source.impl, time))
+
+    def apply_godunov_operator(self, source, time):
+        return DuneStuffVector(self.impl.apply_godunov_operator(source.impl, time))
+
+    def apply_rhs_operator(self, source, time):
+        return DuneStuffVector(self.impl.apply_rhs_operator(source.impl, time))
 
 class DuneStuffVector(VectorInterface):
 

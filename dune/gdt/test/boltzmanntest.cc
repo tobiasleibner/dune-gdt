@@ -98,9 +98,10 @@ public:
   typedef typename Dune::Stuff::LA::CommonDenseVector< RangeFieldType > VectorType;
   typedef DiscreteFunction< FVSpaceType, VectorType > DiscreteFunctionType;
   typedef typename Dune::Stuff::Functions::Constant< EntityType, DomainFieldType, dimDomain, RangeFieldType, dimRange, 1 > ConstantFunctionType;
-  typedef typename Dune::GDT::AdvectionLaxFriedrichsOperator< AnalyticalFluxType, BoundaryValueType, ConstantFunctionType > OperatorType;
+  typedef typename Dune::GDT::AdvectionLaxFriedrichsOperator< AnalyticalFluxType, BoundaryValueType, ConstantFunctionType > LaxFriedrichsOperatorType;
+  typedef typename Dune::GDT::AdvectionGodunovOperator< AnalyticalFluxType, BoundaryValueType > GodunovOperatorType;
   typedef typename Dune::GDT::AdvectionRHSOperator< RHSType > RHSOperatorType;
-  typedef typename Dune::GDT::ExplicitRungeKuttaTimeStepper<OperatorType, DiscreteFunctionType,
+  typedef typename Dune::GDT::ExplicitRungeKuttaTimeStepper<LaxFriedrichsOperatorType, DiscreteFunctionType,
       double, TimeStepperMethods::explicit_euler> FluxTimeStepperType;
   typedef typename Dune::GDT::ExplicitRungeKuttaTimeStepper<RHSOperatorType, DiscreteFunctionType,
       double > RHSTimeStepperType;
@@ -141,6 +142,16 @@ public:
     const auto problem_config = ProblemType::default_config(sigma_s_scattering, sigma_s_absorbing, sigma_t_scattering, sigma_t_absorbing);
     init(num_threads, output_dir, num_save_steps_copy, grid_size, visualize_solution, true, problem_config);
     silent_ = silent;
+  }
+
+  double current_time()
+  {
+    return timestepper_->current_time();
+  }
+
+  double time_step_length()
+  {
+    return dt_;
   }
 
   SolutionVectorsVectorType solve()
@@ -187,7 +198,16 @@ public:
     const DiscreteFunctionType source_function(*fv_space_, source);
     VectorType ret(source);
     DiscreteFunctionType range_function(*fv_space_, ret);
-    advection_operator_->apply(source_function, range_function, time);
+    laxfriedrichs_operator_->apply(source_function, range_function, time);
+    return ret;
+  }
+
+  VectorType apply_godunov_operator(VectorType source, const double time)
+  {
+    const DiscreteFunctionType source_function(*fv_space_, source);
+    VectorType ret(source);
+    DiscreteFunctionType range_function(*fv_space_, ret);
+    godunov_operator_->apply(source_function, range_function, time);
     return ret;
   }
 
@@ -281,11 +301,12 @@ public:
 
     //create Operators
     dx_function_ = std::make_shared< ConstantFunctionType>(dx);
-    advection_operator_ = std::make_shared< OperatorType >(*analytical_flux_, *boundary_values_, *dx_function_, dt_, true, false);
+    laxfriedrichs_operator_ = std::make_shared< LaxFriedrichsOperatorType >(*analytical_flux_, *boundary_values_, *dx_function_, dt_, true, false);
+    godunov_operator_ = std::make_shared< GodunovOperatorType >(*analytical_flux_, *boundary_values_, *dx_function_, dt_, true, false);
     rhs_operator_ = std::make_shared< RHSOperatorType >(*rhs_);
 
     //create timestepper
-    flux_timestepper_ = std::make_shared< FluxTimeStepperType >(*advection_operator_, *u_, -1.0);
+    flux_timestepper_ = std::make_shared< FluxTimeStepperType >(*laxfriedrichs_operator_, *u_, -1.0);
     rhs_timestepper_ = std::make_shared< RHSTimeStepperType >(*rhs_operator_, *u_);
     timestepper_ = std::make_shared< TimeStepperType >(*flux_timestepper_, *rhs_timestepper_);
   } // void init()
@@ -294,7 +315,7 @@ public:
   {
     u_ = std::make_shared< DiscreteFunctionType >(*fv_space_, "solution");
     project(*initial_values_, *u_);
-    flux_timestepper_ = std::make_shared< FluxTimeStepperType >(*advection_operator_, *u_, -1.0);
+    flux_timestepper_ = std::make_shared< FluxTimeStepperType >(*laxfriedrichs_operator_, *u_, -1.0);
     rhs_timestepper_ = std::make_shared< RHSTimeStepperType >(*rhs_operator_, *u_);
     timestepper_ = std::make_shared< TimeStepperType >(*flux_timestepper_, *rhs_timestepper_);
   }
@@ -308,7 +329,8 @@ private:
   std::shared_ptr< const InitialValueType > initial_values_;
   std::shared_ptr< const BoundaryValueType > boundary_values_;
   std::shared_ptr< const RHSType > rhs_;
-  std::shared_ptr< OperatorType > advection_operator_;
+  std::shared_ptr< LaxFriedrichsOperatorType > laxfriedrichs_operator_;
+  std::shared_ptr< GodunovOperatorType > godunov_operator_;
   std::shared_ptr< RHSOperatorType > rhs_operator_;
   std::shared_ptr< FluxTimeStepperType > flux_timestepper_;
   std::shared_ptr< RHSTimeStepperType > rhs_timestepper_;
@@ -589,8 +611,11 @@ BOOST_PYTHON_MODULE(libboltzmann)
        .def("reset", &BoltzmannSolver::reset)
        .def("finished", &BoltzmannSolver::finished)
        .def("apply_LF_operator", &BoltzmannSolver::apply_LF_operator)
+       .def("apply_godunov_operator", &BoltzmannSolver::apply_godunov_operator)
        .def("apply_rhs_operator", &BoltzmannSolver::apply_rhs_operator)
        .def("get_initial_values", &BoltzmannSolver::get_initial_values)
+       .def("current_time", &BoltzmannSolver::current_time)
+       .def("time_step_length", &BoltzmannSolver::time_step_length)
       ;
 
   class_<typename BoltzmannSolver::SolutionVectorsVectorType>("SolutionVectorsVectorType")
