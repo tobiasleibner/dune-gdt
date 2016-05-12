@@ -27,7 +27,7 @@ class Solver(object):
         self.impl.reset()
 
     def finished(self):
-        self.impl.finished()
+        return self.impl.finished()
 
     def current_time(self):
         return self.impl.current_time()
