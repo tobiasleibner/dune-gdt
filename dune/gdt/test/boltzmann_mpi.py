@@ -4,12 +4,16 @@ from pymor.vectorarrays.list import NumpyVector
 from mpi4py import MPI
 import numpy as np
 import resource
+from timeit import default_timer as timer
 
 ######### create MPI communicators
 # create world communicator
 comm_world = MPI.COMM_WORLD
 size_world = comm_world.Get_size()
 rank_world = comm_world.Get_rank()
+
+if (rank_world == 0):
+    start = timer()
 
 # gather processor names and assign each processor name a unique positive number
 proc_name = MPI.Get_processor_name()
@@ -59,7 +63,7 @@ num_snapshots=len(modes)
 chunks_done=1
 
 if rank_world == 0:
-    file_to_write = open("num_snapshots", "w")
+    file_to_write = open("num_snapshots_gridsize" + str(gridsize) + "chunksize" + str(chunk_size), "w")
 
 while not solver.finished():
     print(str(solver.finished()), str(solver.current_time()))
@@ -140,12 +144,13 @@ if rank_world == 0:
     epsilon_T_gamma = epsilon_ast*(1-omega)*np.sqrt(total_num_snapshots)/np.sqrt(total_num_modes)
     final_modes, final_singular_values = pod(all_second_modes_joined, atol=0., rtol=0., l2_mean_err=epsilon_T_gamma)
     del all_second_modes_joined
-    print("memory used 3: ", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.0)
     file_to_write.write("On rank 0, there are " + str(len(final_modes)) + " of " + str(total_num_modes) + " left!\n")
     file_to_write.write("There was a total of " + str(total_num_snapshots) + " snapshots!\n")
-    file_to_write.close()
+    file_to_write.write("The maximum amount of memory used on rank 0 was: " + str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2) + " GB\n")
     print(final_singular_values)
     #final_modes.scal(final_singular_values)
+    elapsed = timer() - start
+    file_to_write.write("time elapsed: " + str(elapsed) + "\n")
 final_modes=comm_world.bcast(final_modes, root=0)
 
 #### solve problem again to calculate error
@@ -166,4 +171,5 @@ del next_vectors
 trajectory_errors = comm_world.gather(trajectory_error, root=0)
 if rank_world == 0:
     error=np.sqrt(np.sum(trajectory_errors)/total_num_snapshots)
-    print(error)
+    file_to_write.write("l2_mean_error is: " + str(error))
+    file_to_write.close()
