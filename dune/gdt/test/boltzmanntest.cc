@@ -186,7 +186,6 @@ public:
     DSC_PROFILER.stopTiming("fv.solve");
     if (!silent_)
       std::cout << "Solving took: " << DSC_PROFILER.getTiming("fv.solve")/1000.0 << "s" << std::endl;
-    // visualize solution
     std::vector< VectorType > ret;
     for (const auto& pair : solution)
       ret.push_back(pair.second.vector());

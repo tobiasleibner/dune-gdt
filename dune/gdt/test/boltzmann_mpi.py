@@ -28,11 +28,10 @@ contained_in_rank_0_group = 1 if rank_proc == 0 else 0
 comm_rank_0_group = MPI.Intracomm.Split(comm_world, contained_in_rank_0_group, rank_world)
 
 ######### snapshot parameters
-# snapshot parameters
-sigma_s_scattering_range = range(0, 11, 3)
-sigma_s_absorbing_range = range(0, 8, 3)
-sigma_a_scattering_range = range(0, 11, 3)
-sigma_a_absorbing_range = range(0, 11, 3)
+sigma_s_scattering_range = range(0, 9, 2)
+sigma_s_absorbing_range = range(0, 9, 2)
+sigma_a_scattering_range = range(0, 11, 11)
+sigma_a_absorbing_range = range(0, 9, 2)
 
 parameters_list=[]
 for sigma_s_scattering in sigma_s_scattering_range:
@@ -43,18 +42,37 @@ for sigma_s_scattering in sigma_s_scattering_range:
 
 parameters=comm_world.scatter(parameters_list, root=0)
 
-######### calculate Boltzmann problem trajectory (using one thread per process)
-solver=wrapper.Solver(1, "boltzmann_sigma_s_s_" + str(parameters[0]) + "_a_" + str(parameters[1]) + "sigma_t_s_" + str(parameters[2]) + "_a_" + str(parameters[3]), 2000000, 20, False, False, parameters[0], parameters[1], parameters[2], parameters[3])
-result = solver.solve()
-num_snapshots=len(result)
-vector_length=result.dim
-
-######### perform first POD with each trajectory
-epsilon_ast = 1e-8
+######### perform RAPOD with Boltzmann trajectory (using one thread per process)
+gridsize=100
+chunk_size=10
+t_end = 3.2
+solver=wrapper.Solver(1, "boltzmann_sigma_s_s_" + str(parameters[0]) + "_a_" + str(parameters[1]) + "sigma_t_s_" + str(parameters[2]) + "_a_" + str(parameters[3]), 2000000, gridsize, False, False, parameters[0], parameters[1], parameters[2], parameters[3])
+num_chunks = int(t_end/(10.*solver.time_step_length())) + (not np.isclose(t_end/(10.*solver.time_step_length()), int(t_end/(10.*solver.time_step_length()))))
+assert num_chunks >= 2
+rooted_tree_depth=num_chunks+2
+epsilon_ast = 1e-4*gridsize
 omega=0.5
-rooted_tree_depth=3
-modes, singular_values = pod(result, atol=0., rtol=0., l2_mean_err=epsilon_ast*omega/np.sqrt(rooted_tree_depth-1))
-modes.scal(singular_values)
+
+modes = solver.next_n_time_steps(chunk_size)
+vector_length=modes.dim
+num_snapshots=len(modes)
+chunks_done=1
+
+if rank_world == 0:
+    file_to_write = open("num_snapshots", "w")
+
+while not solver.finished():
+    print(str(solver.finished()), str(solver.current_time()))
+    next_vectors = solver.next_n_time_steps(chunk_size)
+    num_snapshots += len(next_vectors)
+    chunks_done += 1
+    modes.append(next_vectors)
+    modes, singular_values = pod(modes, atol=0., rtol=0., l2_mean_err=epsilon_ast*omega*np.sqrt(num_snapshots)/np.sqrt(len(modes)*(rooted_tree_depth-1)))
+    if rank_world == 0:
+        file_to_write.write("After step " + str(chunks_done) + ", " + str(len(modes)) + " of " + str(num_snapshots) + " are left!\n")
+    modes.scal(singular_values)
+assert chunks_done == num_chunks
+del next_vectors
 num_modes = len(modes)
 
 ######### gather scaled pod modes from trajectories on processor, join to one VectorArray and perform a second pod per processor
@@ -87,12 +105,13 @@ if rank_proc == 0:
     for v, vv in zip(modes_on_proc_joined._list, modes_on_proc):
         v.data[:] = vv
     del modes_on_proc
-    epsilon_T_alpha = epsilon_ast*omega*np.sqrt(num_snapshots_on_proc/(num_modes_on_proc_before_pod*(rooted_tree_depth-1)))
+    epsilon_T_alpha = epsilon_ast*omega*np.sqrt(num_snapshots_on_proc)/np.sqrt(num_modes_on_proc_before_pod*(rooted_tree_depth-1))
     second_modes, second_singular_values = pod(modes_on_proc_joined, atol=0., rtol=0., l2_mean_err=epsilon_T_alpha)
     del modes_on_proc_joined
     second_modes.scal(second_singular_values)
     num_modes_on_proc_after_pod = len(second_modes)
-    print("memory used 1: ", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.0)
+if rank_world == 0:
+   file_to_write.write("On processor level, there are " + str(num_modes_on_proc_after_pod) + " of " + str(num_modes_on_proc_before_pod) + " left!\n")
 
 ######### gather all (scaled) pod modes from second pod on world rank 0 and perform a third pod with the joined pod modes
 total_num_snapshots = comm_rank_0_group.reduce(num_snapshots_on_proc, op=MPI.SUM, root=0) if rank_proc == 0 else None
@@ -118,15 +137,32 @@ if rank_world == 0:
     for v, vv in zip(all_second_modes_joined._list, all_second_modes):
         v.data[:] = vv
     del all_second_modes
-    epsilon_T_gamma = epsilon_ast*(1-omega)*np.sqrt(total_num_snapshots/total_num_modes)
+    epsilon_T_gamma = epsilon_ast*(1-omega)*np.sqrt(total_num_snapshots)/np.sqrt(total_num_modes)
     final_modes, final_singular_values = pod(all_second_modes_joined, atol=0., rtol=0., l2_mean_err=epsilon_T_gamma)
     del all_second_modes_joined
     print("memory used 3: ", resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.0)
+    file_to_write.write("On rank 0, there are " + str(len(final_modes)) + " of " + str(total_num_modes) + " left!\n")
+    file_to_write.write("There was a total of " + str(total_num_snapshots) + " snapshots!\n")
+    file_to_write.close()
     print(final_singular_values)
     #final_modes.scal(final_singular_values)
 final_modes=comm_world.bcast(final_modes, root=0)
 
-trajectory_error = np.sum((result - final_modes.lincomb(result.dot(final_modes))).l2_norm()**2)
+#### solve problem again to calculate error
+######### perform RAPOD with Boltzmann trajectory (using one thread per process)
+solver.reset()
+chunks_done=0
+
+trajectory_error = 0
+while not solver.finished():
+    print(str(solver.finished()), str(solver.current_time()))
+    next_vectors = solver.next_n_time_steps(chunk_size)
+    trajectory_error += np.sum((next_vectors - final_modes.lincomb(next_vectors.dot(final_modes))).l2_norm()**2)
+    chunks_done += 1
+assert chunks_done == num_chunks
+
+del final_modes
+del next_vectors
 trajectory_errors = comm_world.gather(trajectory_error, root=0)
 if rank_world == 0:
     error=np.sqrt(np.sum(trajectory_errors)/total_num_snapshots)
