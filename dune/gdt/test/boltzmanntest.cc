@@ -219,6 +219,23 @@ public:
     return ret;
   }
 
+  VectorType apply_rhs_operator(VectorType source, const double time, const RangeFieldType sigma_s_scattering, const RangeFieldType sigma_s_absorbing = 0,
+                                const RangeFieldType sigma_t_scattering = 1, const RangeFieldType sigma_t_absorbing = 10)
+  {
+    set_rhs_operator_parameters(sigma_s_scattering, sigma_s_absorbing, sigma_t_scattering, sigma_t_absorbing);
+    apply_rhs_operator(source, time);
+  }
+
+  void set_rhs_operator_parameters(const RangeFieldType sigma_s_scattering = 1, const RangeFieldType sigma_s_absorbing = 0,
+                                   const RangeFieldType sigma_t_scattering = 1, const RangeFieldType sigma_t_absorbing = 10)
+  {
+    const auto problem_config = ProblemType::default_config(sigma_s_scattering, sigma_s_absorbing, sigma_t_scattering, sigma_t_absorbing);
+    const auto problem_ptr = ProblemType::create(problem_config);
+    const auto& problem = *problem_ptr;
+    rhs_ = problem.rhs();
+    rhs_operator_ = std::make_shared< RHSOperatorType >(*rhs_);
+  }
+
   VectorType get_initial_values()
   {
     DiscreteFunctionType ret(*fv_space_, "discrete_initial_values");
@@ -599,9 +616,17 @@ struct VectorExporter
 
 
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(init_overloads, BoltzmannSolver::init, 0, 7)
+BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(apply_rhs_overloads, BoltzmannSolver::apply_rhs_operator, 3, 6)
 
 BOOST_PYTHON_MODULE(libboltzmann)
 {
+  typedef typename BoltzmannSolver::VectorType VectorType;
+  typedef typename BoltzmannSolver::RangeFieldType RangeFieldType;
+  VectorType (BoltzmannSolver::*apply_rhs_without_params)(VectorType, const double) = &BoltzmannSolver::apply_rhs_operator;
+  VectorType (BoltzmannSolver::*apply_rhs_with_params)(VectorType, const double, const RangeFieldType,
+                                                          const RangeFieldType, const RangeFieldType,
+                                                          const RangeFieldType) = &BoltzmannSolver::apply_rhs_operator;
+
   class_<BoltzmannSolver>("BoltzmannSolver", init< optional< const size_t, const std::string, const size_t, const size_t, const bool, const bool, const double, const double, const double, const double > >())
        .def(init< const size_t, const std::string, const size_t, const size_t, const bool, const bool, const std::string, const std::string >())
        .def("init", &BoltzmannSolver::init, init_overloads())
@@ -611,7 +636,9 @@ BOOST_PYTHON_MODULE(libboltzmann)
        .def("finished", &BoltzmannSolver::finished)
        .def("apply_LF_operator", &BoltzmannSolver::apply_LF_operator)
        .def("apply_godunov_operator", &BoltzmannSolver::apply_godunov_operator)
-       .def("apply_rhs_operator", &BoltzmannSolver::apply_rhs_operator)
+       .def("apply_rhs_operator", apply_rhs_without_params)
+       .def("apply_rhs_operator", apply_rhs_with_params, apply_rhs_overloads())
+       .def("set_rhs_operator_parameters", &BoltzmannSolver::set_rhs_operator_parameters)
        .def("get_initial_values", &BoltzmannSolver::get_initial_values)
        .def("current_time", &BoltzmannSolver::current_time)
        .def("time_step_length", &BoltzmannSolver::time_step_length)
