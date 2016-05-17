@@ -2,12 +2,19 @@ from itertools import product
 
 import numpy as np
 
+from pymor.discretizations.basic import DiscretizationBase
+from pymor.operators.basic import OperatorBase
+from pymor.operators.constructions import VectorOperator
+from pymor.parameters.base import ParameterType
 from pymor.vectorarrays.interfaces import VectorSpace
 from pymor.vectorarrays.list import VectorInterface, ListVectorArray
 
 import libboltzmann
 from libboltzmann import CommonDenseVector
 IMPL_TYPES = (CommonDenseVector,)
+
+
+PARAMETER_TYPE = ParameterType({k: tuple() for k in ['s_scat', 's_abs', 't_scat', 't_abs']})
 
 
 class Solver(object):
@@ -53,6 +60,75 @@ class Solver(object):
     def set_rhs_operator_params(self, sigma_s_scattering = 1, sigma_s_absorbing = 0, sigma_t_scattering = 1, sigma_t_absorbing = 10):
         self.impl.set_rhs_operator_parameters(sigma_s_scattering, sigma_s_absorbing, sigma_t_scattering, sigma_t_absorbing)
 
+
+
+class BoltzmannDiscretizationBase(DiscretizationBase):
+
+    def __init__(self, initial_data, lf_operator, rhs_operator):
+        super(BoltzmannDiscretizationBase, self).__init__(
+            operators={'lf': lf_operator, 'rhs': rhs_operator},
+            functionals={},
+            vector_operators={'initial_data': initial_data}
+        )
+        self.solution_space = initial_data.range
+        self.build_parameter_type(PARAMETER_TYPE, local_global=True)
+
+    def _solve(self, mu=None):
+        raise NotImplementedError
+
+
+class DuneDiscretization(BoltzmannDiscretizationBase):
+
+    def __init__(self, *args):
+        self.solver = solver = Solver(*args)
+        initial_data = VectorOperator(ListVectorArray([solver.get_initial_values()]))
+        dim = initial_data.range.dim
+        lf_operator = LFOperator(self.solver.impl, dim)
+        rhs_operator = RHSOperator(self.solver.impl, dim)
+        super(DuneDiscretization, self).__init__(initial_data, lf_operator, rhs_operator)
+
+    def _solve(self, mu=None):
+        return self.solver.solve()
+
+
+class DuneOperatorBase(OperatorBase):
+
+    linear = True
+
+    def __init__(self, impl, dim):
+        self.impl = impl
+        self.source = self.range = DuneStuffVectorSpace(CommonDenseVector, dim)
+
+    def apply(self, U, ind=None, mu=None):
+        assert U in self.source
+        mu = self.parse_parameter(mu)
+        vectors = U._list if ind is None else [U._list[i] for i in ind]
+        result = [DuneStuffVector(self._apply_vector(u.impl, mu)) for u in vectors]
+        return ListVectorArray(result, subtype=U.subtype)
+
+
+class LFOperator(DuneOperatorBase):
+
+    def _apply_vector(self, u, mu):
+        return self.impl.apply_LF_operator(u, 0.)  # assume operator is not time-dependent
+
+
+class LFOperator(DuneOperatorBase):
+
+    def _apply_vector(self, u, mu):
+        return self.impl.apply_godunov_operator(u, 0.)  # assume operator is not time-dependent
+
+
+class RHSOperator(DuneOperatorBase):
+
+    def __init__(self, impl, dim):
+        super(RHSOperator, self).__init__(impl, dim)
+        self.build_parameter_type(PARAMETER_TYPE, local_global=True)
+
+    def _apply_vector(self, u, mu):
+        return self.impl.apply_rhs_operator(u, 0.,
+                                            float(mu['s_scat']), float(mu['s_abs']),
+                                            float(mu['t_scat']), float(mu['t_abs']))
 
 
 class DuneStuffVector(VectorInterface):
