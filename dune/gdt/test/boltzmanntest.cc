@@ -223,7 +223,7 @@ public:
                                 const RangeFieldType sigma_t_scattering = 1, const RangeFieldType sigma_t_absorbing = 10)
   {
     set_rhs_operator_parameters(sigma_s_scattering, sigma_s_absorbing, sigma_t_scattering, sigma_t_absorbing);
-    apply_rhs_operator(source, time);
+    return apply_rhs_operator(source, time);
   }
 
   void set_rhs_operator_parameters(const RangeFieldType sigma_s_scattering = 1, const RangeFieldType sigma_s_absorbing = 0,
@@ -563,9 +563,9 @@ struct VectorExporter
         .def("dot", &Vec::dot)
         .def("__mul__", &Vec::dot)
         .def("buffer", &buffer)
-	.def("scal", &Vec::scal)
-	.def("axpy", &Vec::axpy)
-	.def("copy", &Vec::copy)
+        .def("scal", &Vec::scal)
+        .def("axpy", &Vec::axpy)
+        .def("copy", &Vec::copy)
         ;
   }
 };
