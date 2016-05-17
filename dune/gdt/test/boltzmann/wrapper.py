@@ -4,8 +4,10 @@ import numpy as np
 
 from pymor.discretizations.basic import DiscretizationBase
 from pymor.operators.basic import OperatorBase
-from pymor.operators.constructions import VectorOperator
+from pymor.operators.constructions import VectorOperator, ConstantOperator, LincombOperator
 from pymor.parameters.base import ParameterType
+from pymor.parameters.functionals import ExpressionParameterFunctional, ProjectionParameterFunctional
+from pymor.parameters.spaces import CubicParameterSpace
 from pymor.vectorarrays.interfaces import VectorSpace
 from pymor.vectorarrays.list import VectorInterface, ListVectorArray
 
@@ -14,7 +16,8 @@ from libboltzmann import CommonDenseVector
 IMPL_TYPES = (CommonDenseVector,)
 
 
-PARAMETER_TYPE = ParameterType({k: tuple() for k in ['s_scat', 's_abs', 't_scat', 't_abs']})
+# PARAMETER_TYPE = ParameterType({k: tuple() for k in ['s_scat', 's_abs', 't_scat', 't_abs']})
+PARAMETER_TYPE = ParameterType({'s': (4,)})
 
 
 class Solver(object):
@@ -61,7 +64,7 @@ class Solver(object):
 
 class BoltzmannDiscretizationBase(DiscretizationBase):
 
-    def __init__(self, initial_data, lf_operator, rhs_operator):
+    def __init__(self, initial_data, lf_operator, rhs_operator, param_space=None):
         super(BoltzmannDiscretizationBase, self).__init__(
             operators={'lf': lf_operator, 'rhs': rhs_operator},
             functionals={},
@@ -69,6 +72,7 @@ class BoltzmannDiscretizationBase(DiscretizationBase):
         )
         self.solution_space = initial_data.range
         self.build_parameter_type(PARAMETER_TYPE, local_global=True)
+        self.parameter_space = param_space
 
     def _solve(self, mu=None):
         raise NotImplementedError
@@ -81,8 +85,20 @@ class DuneDiscretization(BoltzmannDiscretizationBase):
         initial_data = VectorOperator(ListVectorArray([solver.get_initial_values()]))
         dim = initial_data.range.dim
         lf_operator = LFOperator(self.solver.impl, dim)
-        rhs_operator = RHSOperator(self.solver.impl, dim)
-        super(DuneDiscretization, self).__init__(initial_data, lf_operator, rhs_operator)
+        self.non_decomp_rhs_operator = ndrhs = RHSOperator(self.solver.impl, dim)
+        rhs_operator = LincombOperator([ConstantOperator(ndrhs.apply(initial_data.range.zeros(), mu=[0., 0., 0., 0.]), initial_data.range),
+                                        RHSWithFixedMuOperator(self.solver.impl, dim, mu=[1., 0., 0., 0.]),
+                                        RHSWithFixedMuOperator(self.solver.impl, dim, mu=[0., 1., 0., 0.]),
+                                        RHSWithFixedMuOperator(self.solver.impl, dim, mu=[0., 0., 1., 0.]),
+                                        RHSWithFixedMuOperator(self.solver.impl, dim, mu=[0., 0., 0., 1.])],
+                                       [ExpressionParameterFunctional('1. - sum(s)', PARAMETER_TYPE),
+                                        ProjectionParameterFunctional('s', (4,), (0,)),
+                                        ProjectionParameterFunctional('s', (4,), (1,)),
+                                        ProjectionParameterFunctional('s', (4,), (2,)),
+                                        ProjectionParameterFunctional('s', (4,), (3,))])
+        param_space = CubicParameterSpace(PARAMETER_TYPE, 0., 10.)
+        super(DuneDiscretization, self).__init__(initial_data, lf_operator, rhs_operator, param_space)
+
 
     def _solve(self, mu=None):
         return self.solver.solve()
@@ -123,9 +139,17 @@ class RHSOperator(DuneOperatorBase):
         self.build_parameter_type(PARAMETER_TYPE, local_global=True)
 
     def _apply_vector(self, u, mu):
-        return self.impl.apply_rhs_operator(u, 0.,
-                                            float(mu['s_scat']), float(mu['s_abs']),
-                                            float(mu['t_scat']), float(mu['t_abs']))
+        return self.impl.apply_rhs_operator(u, 0., *map(float, mu['s']))
+
+
+class RHSWithFixedMuOperator(DuneOperatorBase):
+
+    def __init__(self, impl, dim, mu):
+        super(RHSWithFixedMuOperator, self).__init__(impl, dim)
+        self.mu = mu
+
+    def _apply_vector(self, u, mu):
+        return self.impl.apply_rhs_operator(u, 0., *self.mu)
 
 
 class DuneStuffVector(VectorInterface):
