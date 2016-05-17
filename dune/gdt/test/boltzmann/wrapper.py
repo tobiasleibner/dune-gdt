@@ -51,11 +51,8 @@ class Solver(object):
     def apply_godunov_operator(self, source, time):
         return DuneStuffVector(self.impl.apply_godunov_operator(source.impl, time))
 
-    def apply_rhs_operator(self, source, time):
-        return DuneStuffVector(self.impl.apply_rhs_operator(source.impl, time))
-
-    def apply_rhs_operator_and_set_params(self, source, time, sigma_s_scattering = 1, sigma_s_absorbing = 0, sigma_t_scattering = 1, sigma_t_absorbing = 10):
-        return DuneStuffVector(self.impl.apply_rhs_operator(source.impl, time, sigma_s_scattering, sigma_s_absorbing, sigma_t_scattering, sigma_t_absorbing))
+    def apply_rhs_operator(self, source, *args):
+        return DuneStuffVector(self.impl.apply_rhs_operator(source.impl, *args))
 
     def set_rhs_operator_params(self, sigma_s_scattering = 1, sigma_s_absorbing = 0, sigma_t_scattering = 1, sigma_t_absorbing = 10):
         self.impl.set_rhs_operator_parameters(sigma_s_scattering, sigma_s_absorbing, sigma_t_scattering, sigma_t_absorbing)
@@ -113,7 +110,7 @@ class LFOperator(DuneOperatorBase):
         return self.impl.apply_LF_operator(u, 0.)  # assume operator is not time-dependent
 
 
-class LFOperator(DuneOperatorBase):
+class GodunovOperator(DuneOperatorBase):
 
     def _apply_vector(self, u, mu):
         return self.impl.apply_godunov_operator(u, 0.)  # assume operator is not time-dependent
