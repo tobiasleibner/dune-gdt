@@ -64,18 +64,37 @@ class Solver(object):
 
 class BoltzmannDiscretizationBase(DiscretizationBase):
 
-    def __init__(self, initial_data, lf_operator, rhs_operator, param_space=None):
+    def __init__(self, initial_data, lf_operator, rhs_operator, nt, dt, parameter_space=None):
         super(BoltzmannDiscretizationBase, self).__init__(
             operators={'lf': lf_operator, 'rhs': rhs_operator},
             functionals={},
             vector_operators={'initial_data': initial_data}
         )
+        self.initial_data = initial_data
+        self.lf_operator = lf_operator
+        self.rhs_operator = rhs_operator
+        self.nt = nt
+        self.dt = dt
         self.solution_space = initial_data.range
         self.build_parameter_type(PARAMETER_TYPE, local_global=True)
-        self.parameter_space = param_space
+        self.parameter_space = parameter_space
 
     def _solve(self, mu=None):
-        raise NotImplementedError
+        U = self.initial_data.as_vector(mu)
+        U_last = U.copy()
+        for n in range(self.nt):
+            self.logger.info('Time step {}'.format(n))
+            V = U_last - self.lf_operator.apply(U_last) * self.dt
+            U_last = V + self.rhs_operator.apply(V, mu=mu) * self.dt
+            U.append(U_last)
+        return U
+
+    def as_generic_type(self):
+        return BoltzmannDiscretizationBase(
+            self.initial_data, self.lf_operator, self.rhs_operator,
+            self.nt, self.dt, self.parameter_space
+        )
+
 
 
 class DuneDiscretization(BoltzmannDiscretizationBase):
@@ -92,16 +111,16 @@ class DuneDiscretization(BoltzmannDiscretizationBase):
                                         RHSWithFixedMuOperator(self.solver.impl, dim, mu=[0., 0., 1., 0.]),
                                         RHSWithFixedMuOperator(self.solver.impl, dim, mu=[0., 0., 0., 1.])],
                                        [ExpressionParameterFunctional('1. - sum(s)', PARAMETER_TYPE),
-                                        ProjectionParameterFunctional('s', (4,), (0,)),
-                                        ProjectionParameterFunctional('s', (4,), (1,)),
-                                        ProjectionParameterFunctional('s', (4,), (2,)),
-                                        ProjectionParameterFunctional('s', (4,), (3,))])
+                                        ExpressionParameterFunctional('s[0] - s[2]', PARAMETER_TYPE),
+                                        ExpressionParameterFunctional('s[1] - s[3]', PARAMETER_TYPE),
+                                        ExpressionParameterFunctional('s[2]', PARAMETER_TYPE),
+                                        ExpressionParameterFunctional('s[3]', PARAMETER_TYPE)])
         param_space = CubicParameterSpace(PARAMETER_TYPE, 0., 10.)
-        super(DuneDiscretization, self).__init__(initial_data, lf_operator, rhs_operator, param_space)
+        super(DuneDiscretization, self).__init__(initial_data, lf_operator, rhs_operator, 60, 0.056, param_space)
 
 
     def _solve(self, mu=None):
-        return self.solver.solve()
+        return self.as_generic_type().with_(rhs_operator=self.non_decomp_rhs_operator).solve(mu=mu)
 
 
 class DuneOperatorBase(OperatorBase):
