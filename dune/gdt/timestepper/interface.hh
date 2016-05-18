@@ -212,9 +212,12 @@ public:
     assert(DSC::FloatCmp::ge(t_end - t, 0.0));
     size_t time_step_counter = 0;
 
-    if (DSC::FloatCmp::eq(t, 0.0)) {
+    static bool initial_values_evaluated = false;
+
+    if (!initial_values_evaluated && DSC::FloatCmp::eq(t, 0.0)) {
       sol.insert(sol.end(), std::make_pair(t, current_solution()));
       ++time_step_counter;
+      initial_values_evaluated = true;
     }
 
     while (DSC::FloatCmp::lt(t, t_end) && time_step_counter < n) {
