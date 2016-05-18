@@ -166,12 +166,12 @@ public:
     return dt_;
   }
 
-  SolutionVectorsVectorType solve()
+  SolutionVectorsVectorType solve(const bool with_half_steps = false)
   {
     if (!silent_)
       std::cout << "Solving... " <<  std::endl;
     DSC_PROFILER.startTiming("fv.solve");
-    timestepper_->solve(t_end_, dt_, num_save_steps_, true, !silent_, false, file_path_);
+    timestepper_->solve(t_end_, dt_, num_save_steps_, true, !silent_, false, with_half_steps, file_path_);
     DSC_PROFILER.stopTiming("fv.solve");
     if (!silent_)
       std::cout << "Solving took: " << DSC_PROFILER.getTiming("fv.solve")/1000.0 << "s" << std::endl;
@@ -188,13 +188,13 @@ public:
     return ret;
   }
 
-  SolutionVectorsVectorType next_n_time_steps(const size_t n)
+  SolutionVectorsVectorType next_n_time_steps(const size_t n, const bool with_half_steps = false)
   {
     if (!silent_)
       std::cout << "Calculating next " << DSC::toString(n) << " time steps... " <<  std::endl;
     DSC_PROFILER.startTiming("fv.solve");
     SolutionType solution;
-    timestepper_->next_n_steps(n, t_end_, dt_, !silent_, solution);
+    timestepper_->next_n_steps(n, t_end_, dt_, !silent_, with_half_steps, solution);
     DSC_PROFILER.stopTiming("fv.solve");
     if (!silent_)
       std::cout << "Solving took: " << DSC_PROFILER.getTiming("fv.solve")/1000.0 << "s" << std::endl;
@@ -630,6 +630,7 @@ struct VectorExporter
 
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(init_overloads, BoltzmannSolver::init, 0, 7)
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(apply_rhs_overloads, BoltzmannSolver::apply_rhs_operator, 3, 6)
+BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(next_n_time_steps_overloads, BoltzmannSolver::next_n_time_steps, 1, 2)
 
 BOOST_PYTHON_MODULE(libboltzmann)
 {
@@ -644,7 +645,7 @@ BOOST_PYTHON_MODULE(libboltzmann)
        .def(init< const size_t, const std::string, const size_t, const size_t, const bool, const bool, const std::string, const std::string >())
        .def("init", &BoltzmannSolver::init, init_overloads())
        .def("solve", &BoltzmannSolver::solve)
-       .def("next_n_time_steps", &BoltzmannSolver::next_n_time_steps)
+       .def("next_n_time_steps", &BoltzmannSolver::next_n_time_steps, next_n_time_steps_overloads())
        .def("reset", &BoltzmannSolver::reset)
        .def("finished", &BoltzmannSolver::finished)
        .def("apply_LF_operator", &BoltzmannSolver::apply_LF_operator)
