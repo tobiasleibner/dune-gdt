@@ -149,6 +149,18 @@ public:
     return timestepper_->current_time();
   }
 
+  void set_current_time(const double time)
+  {
+    timestepper_->current_time() = time;
+  }
+
+  void set_current_solution(const VectorType& vec)
+  {
+    timestepper_->current_solution().vector() = vec;
+    rhs_timestepper_->current_solution().vector() = vec;
+    flux_timestepper_->current_solution().vector() = vec;
+  }
+
   double time_step_length()
   {
     return dt_;
@@ -234,6 +246,7 @@ public:
     const auto& problem = *problem_ptr;
     rhs_ = problem.rhs();
     rhs_operator_ = std::make_shared< RHSOperatorType >(*rhs_);
+    rhs_timestepper_->set_operator(*rhs_operator_);
   }
 
   VectorType get_initial_values()
@@ -641,6 +654,8 @@ BOOST_PYTHON_MODULE(libboltzmann)
        .def("set_rhs_operator_parameters", &BoltzmannSolver::set_rhs_operator_parameters)
        .def("get_initial_values", &BoltzmannSolver::get_initial_values)
        .def("current_time", &BoltzmannSolver::current_time)
+       .def("set_current_time", &BoltzmannSolver::set_current_time)
+       .def("set_current_solution", &BoltzmannSolver::set_current_solution)
        .def("time_step_length", &BoltzmannSolver::time_step_length)
       ;
 

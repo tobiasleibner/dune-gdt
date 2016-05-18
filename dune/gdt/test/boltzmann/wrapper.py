@@ -42,6 +42,12 @@ class Solver(object):
     def current_time(self):
         return self.impl.current_time()
 
+    def set_current_time(self, time):
+        return self.impl.set_current_time(time)
+
+    def set_current_solution(self, vec):
+        return self.impl.set_current_solution(vec)
+
     def time_step_length(self):
         return self.impl.time_step_length()
 

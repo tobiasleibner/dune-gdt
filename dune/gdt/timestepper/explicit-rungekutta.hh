@@ -203,7 +203,7 @@ public:
                                 const VectorType& b     = ButcherArrayProviderType::b(),
                                 const TimeVectorType& c = ButcherArrayProviderType::c())
     : BaseType(t_0, initial_values)
-    , op_(op)
+    , op_(&op)
     , r_(r)
     , u_tmp_(BaseType::current_solution())
     , A_(A)
@@ -248,7 +248,7 @@ public:
       u_tmp_.vector() = u_n.vector();
       for (size_t jj = 0; jj < ii; ++jj)
         u_tmp_.vector() += u_intermediate_stages_[jj].vector() * (actual_dt * r_ * (A_[ii][jj]));
-      op_.apply(u_tmp_, u_intermediate_stages_[ii], t + actual_dt * c_[ii]);
+      op_->apply(u_tmp_, u_intermediate_stages_[ii], t + actual_dt * c_[ii]);
     }
 
     // calculate value of u at next time step
@@ -260,6 +260,11 @@ public:
 
     return dt;
   } // ... step(...)
+
+  void set_operator(const OperatorType& op)
+  {
+    op_ = &op;
+  }
 
   const std::pair<bool, TimeFieldType>
   find_suitable_dt(const TimeFieldType initial_dt, const TimeFieldType dt_refinement_factor = 2,
@@ -309,7 +314,7 @@ public:
   }
 
 private:
-  const OperatorType& op_;
+  const OperatorType* op_;
   const RangeFieldType r_;
   DiscreteFunctionType u_tmp_;
   const MatrixType A_;
