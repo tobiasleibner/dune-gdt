@@ -72,6 +72,21 @@ public:
     return dt_2;
   } // ... step(...)
 
+  TimeFieldType step_first(const TimeFieldType dt, const TimeFieldType max_dt)
+  {
+    auto& t                       = current_time();
+    const TimeFieldType actual_dt = std::min(dt, max_dt);
+    return first_stepper_.solve(t + actual_dt, dt, -1, false);
+  } // ... step(...)
+
+  TimeFieldType step_second(const TimeFieldType dt, const TimeFieldType actual_dt)
+  {
+    auto& t                       = current_time();
+    const auto dt2 = second_stepper_.solve(t + actual_dt, dt, -1, false);
+    t += actual_dt;
+    return dt2;
+  } // ... step(...)
+
 private:
   FirstStepperType& first_stepper_;
   SecondStepperType& second_stepper_;

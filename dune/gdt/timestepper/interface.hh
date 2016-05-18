@@ -97,6 +97,16 @@ public:
    */
   virtual TimeFieldType step(const TimeFieldType dt, const TimeFieldType max_dt) = 0;
 
+  virtual TimeFieldType step_first(const TimeFieldType dt, const TimeFieldType max_dt)
+  {
+    return 0;
+  }
+
+  virtual TimeFieldType step_second(const TimeFieldType dt1, const TimeFieldType actual_dt)
+  {
+    return 0;
+  }
+
   const TimeFieldType& current_time() const
   {
     return t_;
@@ -156,7 +166,7 @@ public:
    * length has to be reduced to hit these time points.
    */
   virtual TimeFieldType solve(const TimeFieldType t_end, const TimeFieldType initial_dt, const size_t num_save_steps,
-                              const bool save_solution, const bool output_progress, const bool visualize,
+                              const bool save_solution, const bool output_progress, const bool visualize, const bool with_half_steps,
                               const std::string filename_prefix, SolutionType& sol)
   {
     TimeFieldType dt = initial_dt;
@@ -183,7 +193,15 @@ public:
         max_dt = std::min(next_save_time - t, max_dt);
 
       // do a timestep
-      dt = step(dt, max_dt);
+      if (with_half_steps) {
+        const auto dt1 = step_first(dt, max_dt);
+        if (save_solution && num_save_steps == size_t(-1)) {
+          sol.insert(sol.end(), std::make_pair(t, current_solution()));
+        }
+        dt = step_second(dt1, std::min(dt, max_dt));
+      } else {
+        dt = step(dt, max_dt);
+      }
       t  = current_time();
 
       // augment time step counter
@@ -205,7 +223,8 @@ public:
     return dt;
   } // ... solve(...)
 
-  virtual TimeFieldType next_n_steps(const size_t n, const TimeFieldType t_end, const TimeFieldType initial_dt, const bool output_progress, SolutionType& sol)
+  virtual TimeFieldType next_n_steps(const size_t n, const TimeFieldType t_end, const TimeFieldType initial_dt,
+                                     const bool output_progress, const bool with_half_steps, SolutionType& sol)
   {
     TimeFieldType dt = initial_dt;
     TimeFieldType t = current_time();
@@ -227,7 +246,13 @@ public:
         max_dt = t_end - t;
 
       // do a timestep
-      dt = step(dt, max_dt);
+      if (with_half_steps) {
+        const auto dt1 = step_first(dt, max_dt);
+        sol.insert(sol.end(), std::make_pair(t, current_solution()));
+        dt = step_second(dt1, std::min(dt, max_dt));
+      } else {
+        dt = step(dt, max_dt);
+      }
       t  = current_time();
 
       // augment time step counter
@@ -243,17 +268,17 @@ public:
 
   virtual TimeFieldType solve(const TimeFieldType t_end, const TimeFieldType initial_dt = 1e-4,
                               const size_t num_save_steps = -1, const bool save_solution = true,
-                              const bool output_progress = false, const bool visualize = false,
+                              const bool output_progress = false, const bool visualize = false, const bool with_half_steps = false,
                               const std::string filename_prefix = "solution")
   {
     return solve(
-        t_end, initial_dt, num_save_steps, save_solution, output_progress, visualize, filename_prefix, *solution_);
+        t_end, initial_dt, num_save_steps, save_solution, output_progress, visualize, with_half_steps, filename_prefix, *solution_);
   }
 
   virtual TimeFieldType solve(const TimeFieldType t_end, const TimeFieldType initial_dt, const size_t num_save_steps,
                               SolutionType& sol)
   {
-    return solve(t_end, initial_dt, num_save_steps, true, false, false, "", sol);
+    return solve(t_end, initial_dt, num_save_steps, true, false, false, false, "", sol);
   }
 
   /**
