@@ -16,7 +16,6 @@ from libboltzmann import CommonDenseVector
 IMPL_TYPES = (CommonDenseVector,)
 
 
-# PARAMETER_TYPE = ParameterType({k: tuple() for k in ['s_scat', 's_abs', 't_scat', 't_abs']})
 PARAMETER_TYPE = ParameterType({'s': (4,)})
 
 
@@ -24,6 +23,7 @@ class Solver(object):
 
     def __init__(self, *args):
         self.impl = libboltzmann.BoltzmannSolver(*args)
+        self.last_mu = None
 
     def solve(self):
         result = self.impl.solve()
@@ -63,44 +63,52 @@ class Solver(object):
     def apply_rhs_operator(self, source, *args):
         return DuneStuffVector(self.impl.apply_rhs_operator(source.impl, *args))
 
-    def set_rhs_operator_params(self, sigma_s_scattering = 1, sigma_s_absorbing = 0, sigma_t_scattering = 1, sigma_t_absorbing = 10):
-        self.impl.set_rhs_operator_parameters(sigma_s_scattering, sigma_s_absorbing, sigma_t_scattering, sigma_t_absorbing)
+    def set_rhs_operator_params(self, sigma_s_scattering=1, sigma_s_absorbing=0, sigma_t_scattering=1, sigma_t_absorbing=10):
+        mu = (sigma_s_scattering, sigma_s_absorbing, sigma_t_scattering, sigma_t_absorbing)
+        if mu != self.last_mu:
+            self.last_mu = mu
+            self.impl.set_rhs_operator_parameters(*mu)
 
 
 
 class BoltzmannDiscretizationBase(DiscretizationBase):
 
-    def __init__(self, initial_data, lf_operator, rhs_operator, nt, dt, parameter_space=None):
+    special_operators = frozenset({'lf', 'rhs'})
+    special_vector_operators = frozenset({'initial_data'})
+
+    def __init__(self, nt=60, dt=0.056, initial_data=None, lf=None, rhs=None, operators=None, functionals=None,
+                 vector_operators=None, products=None, estimator=None, visualizer=None, parameter_space=None,
+                 cache_region=None, name=None):
         super(BoltzmannDiscretizationBase, self).__init__(
-            operators={'lf': lf_operator, 'rhs': rhs_operator},
-            functionals={},
-            vector_operators={'initial_data': initial_data}
+            initial_data=initial_data, lf=lf, rhs=rhs,
+            operators=operators, functionals=functionals, vector_operators=vector_operators, products=products,
+            estimator=estimator, visualizer=visualizer, cache_region=cache_region, name=name
         )
-        self.initial_data = initial_data
-        self.lf_operator = lf_operator
-        self.rhs_operator = rhs_operator
         self.nt = nt
         self.dt = dt
-        self.solution_space = initial_data.range
+        self.solution_space = self.initial_data.range
         self.build_parameter_type(PARAMETER_TYPE, local_global=True)
         self.parameter_space = parameter_space
 
-    def _solve(self, mu=None):
+    def _solve(self, mu=None, return_half_steps=False):
         U = self.initial_data.as_vector(mu)
+        U_half = U.empty()
         U_last = U.copy()
+        rhs = self.rhs.assemble(mu)
         for n in range(self.nt):
             self.logger.info('Time step {}'.format(n))
-            V = U_last - self.lf_operator.apply(U_last) * self.dt
-            U_last = V + self.rhs_operator.apply(V, mu=mu) * self.dt
+            V = U_last - self.lf.apply(U_last) * self.dt
+            if return_half_steps:
+                U_half.append(V)
+            U_last = V + rhs.apply(V, mu=mu) * self.dt
             U.append(U_last)
-        return U
+        if return_half_steps:
+            return U, U_half
+        else:
+            return U
 
     def as_generic_type(self):
-        return BoltzmannDiscretizationBase(
-            self.initial_data, self.lf_operator, self.rhs_operator,
-            self.nt, self.dt, self.parameter_space
-        )
-
+        return BoltzmannDiscretizationBase(**{k: getattr(self, k) for k in BoltzmannDiscretizationBase._init_arguments})
 
 
 class DuneDiscretization(BoltzmannDiscretizationBase):
@@ -109,32 +117,46 @@ class DuneDiscretization(BoltzmannDiscretizationBase):
         self.solver = solver = Solver(*args)
         initial_data = VectorOperator(ListVectorArray([solver.get_initial_values()]))
         dim = initial_data.range.dim
-        lf_operator = LFOperator(self.solver.impl, dim)
-        self.non_decomp_rhs_operator = ndrhs = RHSOperator(self.solver.impl, dim)
-        rhs_operator = LincombOperator([ConstantOperator(ndrhs.apply(initial_data.range.zeros(), mu=[0., 0., 0., 0.]), initial_data.range),
-                                        RHSWithFixedMuOperator(self.solver.impl, dim, mu=[1., 0., 0., 0.]),
-                                        RHSWithFixedMuOperator(self.solver.impl, dim, mu=[0., 1., 0., 0.]),
-                                        RHSWithFixedMuOperator(self.solver.impl, dim, mu=[0., 0., 1., 0.]),
-                                        RHSWithFixedMuOperator(self.solver.impl, dim, mu=[0., 0., 0., 1.])],
-                                       [ExpressionParameterFunctional('1. - sum(s)', PARAMETER_TYPE),
-                                        ExpressionParameterFunctional('s[0] - s[2]', PARAMETER_TYPE),
-                                        ExpressionParameterFunctional('s[1] - s[3]', PARAMETER_TYPE),
-                                        ExpressionParameterFunctional('s[2]', PARAMETER_TYPE),
-                                        ExpressionParameterFunctional('s[3]', PARAMETER_TYPE)])
+        lf_operator = LFOperator(self.solver, dim)
+        self.non_decomp_rhs_operator = ndrhs = RHSOperator(self.solver, dim)
+        affine_part = ConstantOperator(ndrhs.apply(initial_data.range.zeros(), mu=[0., 0., 0., 0.]), initial_data.range)
+        rhs_operator = affine_part + \
+            LincombOperator([LinearOperator(RHSWithFixedMuOperator(self.solver, dim, mu=[1., 0., 0., 0.]) - affine_part),
+                             LinearOperator(RHSWithFixedMuOperator(self.solver, dim, mu=[0., 1., 0., 0.]) - affine_part),
+                             LinearOperator(RHSWithFixedMuOperator(self.solver, dim, mu=[1., 0., 1., 0.]) - affine_part),
+                             LinearOperator(RHSWithFixedMuOperator(self.solver, dim, mu=[0., 1., 0., 1.]) - affine_part)],
+                            [ExpressionParameterFunctional('s[0] - s[2]', PARAMETER_TYPE),
+                             ExpressionParameterFunctional('s[1] - s[3]', PARAMETER_TYPE),
+                             ExpressionParameterFunctional('s[2]', PARAMETER_TYPE),
+                             ExpressionParameterFunctional('s[3]', PARAMETER_TYPE)])
         param_space = CubicParameterSpace(PARAMETER_TYPE, 0., 10.)
-        super(DuneDiscretization, self).__init__(initial_data, lf_operator, rhs_operator, 60, 0.056, param_space)
+        super(DuneDiscretization, self).__init__(initial_data=initial_data, lf=lf_operator, rhs=rhs_operator, nt=60, dt=0.056,
+                                                 parameter_space=param_space, name='DuneDiscretization')
+
+    def _solve(self, mu=None, return_half_steps=False):
+        return self.as_generic_type().with_(rhs=self.non_decomp_rhs_operator).solve(mu=mu, return_half_steps=return_half_steps)
 
 
-    def _solve(self, mu=None):
-        return self.as_generic_type().with_(rhs_operator=self.non_decomp_rhs_operator).solve(mu=mu)
+class LinearOperator(OperatorBase):
+
+    linear = True
+
+    def __init__(self, op):
+        self.source = op.source
+        self.range = op.range
+        self.op = op
+        self.name = op.name + '_wrapped_as_linear_op'
+
+    def apply(self, U, ind=None, mu=None):
+        return self.op.apply(U, ind=ind, mu=mu)
 
 
 class DuneOperatorBase(OperatorBase):
 
     linear = True
 
-    def __init__(self, impl, dim):
-        self.impl = impl
+    def __init__(self, solver, dim):
+        self.solver = solver
         self.source = self.range = DuneStuffVectorSpace(CommonDenseVector, dim)
 
     def apply(self, U, ind=None, mu=None):
@@ -148,33 +170,39 @@ class DuneOperatorBase(OperatorBase):
 class LFOperator(DuneOperatorBase):
 
     def _apply_vector(self, u, mu):
-        return self.impl.apply_LF_operator(u, 0.)  # assume operator is not time-dependent
+        return self.solver.impl.apply_LF_operator(u, 0.)  # assume operator is not time-dependent
 
 
 class GodunovOperator(DuneOperatorBase):
 
     def _apply_vector(self, u, mu):
-        return self.impl.apply_godunov_operator(u, 0.)  # assume operator is not time-dependent
+        return self.solver.impl.apply_godunov_operator(u, 0.)  # assume operator is not time-dependent
 
 
 class RHSOperator(DuneOperatorBase):
 
-    def __init__(self, impl, dim):
-        super(RHSOperator, self).__init__(impl, dim)
+    linear = False
+
+    def __init__(self, solver, dim):
+        super(RHSOperator, self).__init__(solver, dim)
         self.build_parameter_type(PARAMETER_TYPE, local_global=True)
 
     def _apply_vector(self, u, mu):
-        return self.impl.apply_rhs_operator(u, 0., *map(float, mu['s']))
+        self.solver.set_rhs_operator_params(*map(float, mu['s']))
+        return self.solver.impl.apply_rhs_operator(u, 0.)
 
 
 class RHSWithFixedMuOperator(DuneOperatorBase):
+
+    linear = False
 
     def __init__(self, impl, dim, mu):
         super(RHSWithFixedMuOperator, self).__init__(impl, dim)
         self.mu = mu
 
     def _apply_vector(self, u, mu):
-        return self.impl.apply_rhs_operator(u, 0., *self.mu)
+        self.solver.set_rhs_operator_params(*self.mu)
+        return self.solver.impl.apply_rhs_operator(u, 0.)
 
 
 class DuneStuffVector(VectorInterface):
