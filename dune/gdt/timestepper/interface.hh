@@ -245,20 +245,35 @@ public:
       if (DSC::FloatCmp::gt(t + dt, t_end))
         max_dt = t_end - t;
 
+      static double dt1 = 0;
+      static double first_evaluated = false;
+
       // do a timestep
       if (with_half_steps) {
-        const auto dt1 = step_first(dt, max_dt);
-        sol.insert(sol.end(), std::make_pair(t, current_solution()));
-        dt = step_second(dt1, std::min(dt, max_dt));
+        if (!first_evaluated) {
+          dt1 = step_first(dt, max_dt);
+          t  = current_time();
+          sol.insert(sol.end(), std::make_pair(t, current_solution()));
+          first_evaluated = true;
+          ++time_step_counter;
+        }
+        if (time_step_counter != n) {
+          dt = step_second(dt1, std::min(dt, max_dt));
+          ++time_step_counter;
+          first_evaluated = false;
+          t  = current_time();
+          sol.insert(sol.end(), std::make_pair(t, current_solution()));
+        }
       } else {
         dt = step(dt, max_dt);
+        t  = current_time();
+        sol.insert(sol.end(), std::make_pair(t, current_solution()));
+        ++time_step_counter;
       }
-      t  = current_time();
 
       // augment time step counter
-      ++time_step_counter;
+      t  = current_time();
 
-      sol.insert(sol.end(), std::make_pair(t, current_solution()));
       if (output_progress)
         std::cout << "time step " << time_step_counter << " done, time =" << t << ", current dt= " << dt << std::endl;
     } // while (t < t_end)
