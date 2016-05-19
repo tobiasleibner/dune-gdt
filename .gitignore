@@ -39,3 +39,7 @@ demos-*
 *.vtu
 *.pc
 build-*
+*.xml
+*.pyc
+*.iml
+*.requests
