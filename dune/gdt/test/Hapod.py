@@ -13,7 +13,7 @@ class HapodBasics:
     def __init__(self, gridsize, chunk_size, solver_num_threads):
         self.gridsize = gridsize
         self.chunk_size = chunk_size
-        self.with_half_steps = False
+        self.with_half_steps = True
         # Preparation: setup MPI
         # create world communicator
         self.comm_world = MPI.COMM_WORLD
@@ -50,8 +50,8 @@ class HapodBasics:
                     for sigma_a_absorbing in sigma_a_absorbing_range:
                         parameters_list.append([sigma_s_scattering,
                                                 sigma_s_absorbing,
-                                                sigma_s_scattering + sigma_a_scattering,
-                                                sigma_s_absorbing + sigma_a_absorbing])
+                                                sigma_a_scattering,
+                                                sigma_a_absorbing])
         self.parameters = self.comm_world.scatter(parameters_list, root=0)
 
         # Setup Solver
@@ -81,8 +81,8 @@ class HapodBasics:
         self.rooted_tree_depth = None
 
     def get_log_file(self, file_name):
-        return open(file_name + "_gridsize_" + str(self.gridsize) + "_chunksize_" + str(self.chunk_size) + "_rank_" +
-                    str(self.rank_world), "w", 0)
+        return open(file_name + "_gridsize_" + str(self.gridsize) + "_chunksize_" + str(self.chunk_size) + "_" +
+                    str(self.with_half_steps) + "_rank_" + str(self.rank_world), "w", 0)
 
     def calculate_trajectory_error(self, finalmodes, num_threads=1):
         error = 0
@@ -134,10 +134,10 @@ class HapodBasics:
             v.data[:] = vv
         return listvectorarray
 
-    def gather_on_rank_0(self, comm, vectorarray, num_snapshots_on_rank, num_modes_on_rank, uniform_num_modes=True):
+    def gather_on_rank_0(self, comm, vectorarray, num_snapshots_on_rank, uniform_num_modes=True):
         rank = comm.Get_rank()
         num_snapshots_in_associated_leafs = comm.reduce(num_snapshots_on_rank, op=MPI.SUM, root=0)
-        total_num_modes = comm.reduce(num_modes_on_rank, op=MPI.SUM, root=0)
+        total_num_modes = comm.reduce(len(vectorarray), op=MPI.SUM, root=0)
         # create empty numpy array on rank 0 as a buffer to receive the pod modes from each core
         vectors_gathered = np.empty(shape=(total_num_modes, self.vector_length)) if rank == 0 else None
         # gather the modes (as numpy array, thus the call to data) in vectors_gathered.
@@ -145,7 +145,7 @@ class HapodBasics:
             comm.Gather(vectorarray.data, vectors_gathered, root=0)
         else:
             # Gatherv needed because every process can send a different number of modes
-            counts = comm.gather(num_modes_on_rank*self.vector_length, root=0)
+            counts = comm.gather(len(vectorarray)*self.vector_length, root=0)
             if rank == 0:
                 displacements = [0.]
                 for j, count in enumerate(counts[0:len(counts) - 1]):

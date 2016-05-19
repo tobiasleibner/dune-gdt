@@ -134,12 +134,12 @@ public:
   BoltzmannSolver(const size_t num_threads = 1, const std::string output_dir = "boltzmann", const size_t num_save_steps = 10,
                   const size_t grid_size = 50, const bool visualize_solution = true, const bool silent = false,
                   const RangeFieldType sigma_s_scattering = 1, const RangeFieldType sigma_s_absorbing = 0,
-                  const RangeFieldType sigma_t_scattering = 1, const RangeFieldType sigma_t_absorbing = 10)
+                  const RangeFieldType sigma_a_scattering = 0, const RangeFieldType sigma_a_absorbing = 10)
   {
     auto num_save_steps_copy = num_save_steps;
     if (num_save_steps > 1e6)
         num_save_steps_copy = size_t(-1);
-    const auto problem_config = ProblemType::default_config(sigma_s_scattering, sigma_s_absorbing, sigma_t_scattering, sigma_t_absorbing);
+    const auto problem_config = ProblemType::default_config(sigma_s_scattering, sigma_s_absorbing, sigma_s_scattering + sigma_a_scattering, sigma_s_absorbing + sigma_a_absorbing);
     init(num_threads, output_dir, num_save_steps_copy, grid_size, visualize_solution, true, problem_config);
     silent_ = silent;
   }
@@ -232,16 +232,16 @@ public:
   }
 
   VectorType apply_rhs_operator(VectorType source, const double time, const RangeFieldType sigma_s_scattering, const RangeFieldType sigma_s_absorbing = 0,
-                                const RangeFieldType sigma_t_scattering = 1, const RangeFieldType sigma_t_absorbing = 10)
+                                const RangeFieldType sigma_a_scattering = 1, const RangeFieldType sigma_a_absorbing = 10)
   {
-    set_rhs_operator_parameters(sigma_s_scattering, sigma_s_absorbing, sigma_t_scattering, sigma_t_absorbing);
+    set_rhs_operator_parameters(sigma_s_scattering, sigma_s_absorbing, sigma_a_scattering, sigma_a_absorbing);
     return apply_rhs_operator(source, time);
   }
 
   void set_rhs_operator_parameters(const RangeFieldType sigma_s_scattering = 1, const RangeFieldType sigma_s_absorbing = 0,
-                                   const RangeFieldType sigma_t_scattering = 1, const RangeFieldType sigma_t_absorbing = 10)
+                                   const RangeFieldType sigma_a_scattering = 0, const RangeFieldType sigma_a_absorbing = 10)
   {
-    const auto problem_config = ProblemType::default_config(sigma_s_scattering, sigma_s_absorbing, sigma_t_scattering, sigma_t_absorbing);
+    const auto problem_config = ProblemType::default_config(sigma_s_scattering, sigma_s_absorbing, sigma_s_scattering + sigma_a_scattering, sigma_s_absorbing + sigma_a_absorbing);
     const auto problem_ptr = ProblemType::create(problem_config);
     const auto& problem = *problem_ptr;
     rhs_ = problem.rhs();
