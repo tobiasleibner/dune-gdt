@@ -195,9 +195,8 @@ public:
       // do a timestep
       if (with_half_steps) {
         const auto dt1 = step_first(dt, max_dt);
-        if (save_solution && num_save_steps == size_t(-1)) {
-          sol.insert(sol.end(), std::make_pair(t, current_solution()));
-        }
+        if (save_solution && num_save_steps == size_t(-1))
+          sol.insert(sol.end(), std::make_pair(t+0.5*dt, current_solution()));
         dt = step_second(dt1, std::min(dt, max_dt));
       } else {
         dt = step(dt, max_dt);
@@ -253,7 +252,7 @@ public:
         if (!first_evaluated) {
           dt1 = step_first(dt, max_dt);
           t  = current_time();
-          sol.insert(sol.end(), std::make_pair(t, current_solution()));
+          sol.insert(sol.end(), std::make_pair(t+0.5*dt, current_solution()));
           first_evaluated = true;
           ++time_step_counter;
         }
