@@ -121,11 +121,13 @@ class DuneDiscretization(BoltzmannDiscretizationBase):
         self.non_decomp_rhs_operator = ndrhs = RHSOperator(self.solver, dim)
         affine_part = ConstantOperator(ndrhs.apply(initial_data.range.zeros(), mu=[0., 0., 0., 0.]), initial_data.range)
         rhs_operator = affine_part + \
-            LincombOperator([LinearOperator(RHSWithFixedMuOperator(self.solver, dim, mu=[1., 0., 0., 0.]) - affine_part),
+            LincombOperator([LinearOperator(RHSWithFixedMuOperator(self.solver, dim, mu=[0., 0., 0., 0.]) - affine_part),
+                             LinearOperator(RHSWithFixedMuOperator(self.solver, dim, mu=[1., 0., 0., 0.]) - affine_part),
                              LinearOperator(RHSWithFixedMuOperator(self.solver, dim, mu=[0., 1., 0., 0.]) - affine_part),
                              LinearOperator(RHSWithFixedMuOperator(self.solver, dim, mu=[1., 0., 1., 0.]) - affine_part),
                              LinearOperator(RHSWithFixedMuOperator(self.solver, dim, mu=[0., 1., 0., 1.]) - affine_part)],
-                            [ExpressionParameterFunctional('s[0] - s[2]', PARAMETER_TYPE),
+                            [ExpressionParameterFunctional('1 - s[0] - s[1]', PARAMETER_TYPE),
+                             ExpressionParameterFunctional('s[0] - s[2]', PARAMETER_TYPE),
                              ExpressionParameterFunctional('s[1] - s[3]', PARAMETER_TYPE),
                              ExpressionParameterFunctional('s[2]', PARAMETER_TYPE),
                              ExpressionParameterFunctional('s[3]', PARAMETER_TYPE)])

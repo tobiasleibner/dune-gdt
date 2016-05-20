@@ -10,7 +10,8 @@ from boltzmann.wrapper import DuneDiscretization
 set_log_levels({'boltzmann': 'INFO'})
 d = DuneDiscretization()
 
-mu = d.parse_parameter([1., 0., 1., 10.])
+mu = d.parse_parameter([0., 5., 1., 10.])
+# mu = d.parameter_space.sample_randomly(1)[0]
 
 # basis generation (POD on single trajectory)
 U, U_half = d.solve(mu, return_half_steps=True)
