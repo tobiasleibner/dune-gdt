@@ -7,10 +7,11 @@ from timeit import default_timer as timer
 import sys
 import math
 from itertools import izip
+from scipy.linalg import eigh
 
 
 class HapodBasics:
-    def __init__(self, gridsize, chunk_size, solver_num_threads):
+    def __init__(self, gridsize, chunk_size, solver_num_threads=1, epsilon_ast=1e-4):
         self.gridsize = gridsize
         self.chunk_size = chunk_size
         self.with_half_steps = True
@@ -56,18 +57,7 @@ class HapodBasics:
 
         # Setup Solver
         self.t_end = 3.2
-        parameters = self.parameters
-        self.solver = wrapper.Solver(solver_num_threads,
-                                     "boltzmann_sigma_s_s_" + str(parameters[0]) + "_a_" + str(parameters[1]) +
-                                     "sigma_t_s_" + str(parameters[2]) + "_a_" + str(parameters[3]),
-                                     2000000,
-                                     gridsize,
-                                     False,
-                                     False,
-                                     parameters[0],
-                                     parameters[1],
-                                     parameters[2],
-                                     parameters[3])
+        self.solver = self.create_solver(self.parameters)
         self.vector_length = self.solver.get_initial_values().dim
         self.empty_vectorarray = ListVectorArray([self.solver.get_initial_values()]).zeros()
         self.num_time_steps = math.ceil(self.t_end / self.solver.time_step_length()) + 1.
@@ -76,28 +66,27 @@ class HapodBasics:
         self.num_chunks = math.ceil(self.num_time_steps / chunk_size)
         self.last_chunk_size = self.num_time_steps - chunk_size*(self.num_chunks-1.)
         assert self.num_chunks >= 2
-        self.epsilon_ast = 1e-4 * gridsize
+        self.epsilon_ast = epsilon_ast
         self.omega = 0.5
         self.rooted_tree_depth = None
 
+    def create_solver(self, mu, num_threads=1):
+        return wrapper.Solver(num_threads,
+                              "boltzmann_sigma_s_s_" + str(mu[0]) + "_a_" + str(mu[1]) +
+                              "sigma_t_s_" + str(mu[2]) + "_a_" + str(mu[3]),
+                              2000000,
+                              self.gridsize,
+                              False,
+                              False,
+                              *mu)
+
     def get_log_file(self, file_name):
         return open(file_name + "_gridsize_" + str(self.gridsize) + "_chunksize_" + str(self.chunk_size) + "_" +
-                    str(self.with_half_steps) + "_rank_" + str(self.rank_world), "w", 0)
+                    str(self.with_half_steps) + "_tol_" + str(self.epsilon_ast) + "_rank_" + str(self.rank_world), "w", 0)
 
     def calculate_trajectory_error(self, finalmodes, num_threads=1):
         error = 0
-        parameters = self.parameters
-        solver = wrapper.Solver(num_threads,
-                                "boltzmann_sigma_s_s_" + str(parameters[0]) + "_a_" + str(parameters[1]) +
-                                "sigma_t_s_" + str(parameters[2]) + "_a_" + str(parameters[3]),
-                                2000000,
-                                self.gridsize,
-                                False,
-                                False,
-                                parameters[0],
-                                parameters[1],
-                                parameters[2],
-                                parameters[3])
+        solver = self.create_solver(self.parameters, num_threads=num_threads)
         while not solver.finished():
             next_vectors = solver.next_n_time_steps(1, self.with_half_steps)
             next_vectors_npvecarray = NumpyVectorArray(np.zeros(shape=(len(next_vectors), self.vector_length)))
@@ -113,7 +102,7 @@ class HapodBasics:
         comm.Recv(received_array, source=source, tag=tag)
         return self.convert_to_listvectorarray(received_array)
 
-    def pod_and_scal(self, vectorarray, num_snapshots_in_associated_leafs, root_of_tree=False):
+    def pod(self, vectorarray, num_snapshots_in_associated_leafs, root_of_tree=False):
         if not root_of_tree:
             epsilon_alpha = self.epsilon_ast * self.omega * \
                             np.sqrt(num_snapshots_in_associated_leafs) / np.sqrt(len(vectorarray) *
@@ -121,12 +110,79 @@ class HapodBasics:
         else:
             epsilon_alpha = self.epsilon_ast * (1. - self.omega) * \
                             np.sqrt(num_snapshots_in_associated_leafs) / np.sqrt(len(vectorarray))
-        modes, svals = pod(vectorarray, atol=0., rtol=0., l2_mean_err=epsilon_alpha)
+        return pod(vectorarray, atol=0., rtol=0., l2_mean_err=epsilon_alpha)
+
+    def pod_and_scal(self, vectorarray, num_snapshots_in_associated_leafs, root_of_tree=False):
+        modes, svals, timings = self.pod(vectorarray, num_snapshots_in_associated_leafs, root_of_tree=root_of_tree)
         vectorarray._list = None
         del vectorarray
         if not root_of_tree:
             modes.scal(svals)
-        return modes
+        return modes, timings
+
+    def scal_and_pod_for_rapod(self, modes, svals, next_vectors, num_snapshots_in_associated_leafs, root_of_tree=False, orthonormalize=True):
+	len_modes = len(modes)
+	len_next = len(next_vectors)
+	
+        modes.scal(svals)
+
+        timings = dict()
+
+        start = timer()
+#        logger.info('Computing gramians ...')
+        gramian = np.empty((len_modes + len_next,) * 2)
+        gramian[:len_modes, :len_modes] = np.diag(svals)**2
+        gramian[len_modes:, len_modes:] = next_vectors.gramian()
+        cross_gramian = modes.dot(next_vectors)
+        modes.append(next_vectors)
+        next_vectors._list = None
+        del next_vectors
+        gramian[:len_modes, len_modes:] = cross_gramian
+        gramian[len_modes:, :len_modes] = cross_gramian.T
+        del cross_gramian
+        elapsed = timer() - start
+        timings["gramian"] = elapsed
+        start = timer()
+#        logger.info('Computing eigenvalue decomposition ...')
+        EVALS, EVECS = eigh(gramian, overwrite_a=True, turbo=True, eigvals=None)
+        del gramian
+        EVALS = EVALS[::-1]
+        EVECS = EVECS.T[::-1, :]
+
+        errs = np.concatenate((np.cumsum(EVALS[::-1])[::-1], [0.]))
+
+	epsilon_alpha = np.sqrt(num_snapshots_in_associated_leafs) / np.sqrt(len_modes + len_next) * self.epsilon_ast
+        if not root_of_tree:
+            epsilon_alpha = epsilon_alpha * self.omega / np.sqrt(self.rooted_tree_depth - 1)
+        else:
+            epsilon_alpha = epsilon_alpha * (1 - self.omega)
+        below_err = np.where(errs <= epsilon_alpha**2 * (len_modes + len_next))[0]
+        first_below_err = below_err[0]
+        svals = np.sqrt(EVALS[:first_below_err])
+        EVECS = EVECS[:first_below_err]
+
+        elapsed = timer() - start
+        timings["EV decomp"] = elapsed
+        start = timer()
+ #       with logger.block('Computing left-singular vectors ({} vectors) ...'.format(len(EVECS))):
+        final_modes = modes.lincomb(EVECS / svals[:, np.newaxis])
+        modes._list = None
+        del modes
+        del EVECS
+
+        elapsed = timer() - start
+        timings["left-sing vecs"] = elapsed
+
+        if orthonormalize:
+            start = timer()
+#            with logger.block('Re-orthonormalizing POD modes ...'):
+            final_modes = gram_schmidt(final_modes, copy=False)
+            elapsed = timer() - start
+            timings["reorthonormalizing"] = elapsed
+
+        timings["check"] = 0.
+        
+        return final_modes, svals, timings
 
     def convert_to_listvectorarray(self, numpy_array):
         listvectorarray = self.empty_vectorarray.zeros(len(numpy_array))
@@ -158,11 +214,15 @@ class HapodBasics:
             vectors_gathered = self.convert_to_listvectorarray(vectors_gathered)
         return vectors_gathered, num_snapshots_in_associated_leafs
 
-    def rapod_over_ranks(self, comm, modes=None, num_snapshots_in_associated_leafs=None, last_rapod=False,
+    def zero_timings_dict(self):
+        return {"gramian" : 0., "EV decomp": 0., "left-sing vecs": 0., "reorthonormalizing": 0., "check": 0.}
+
+    def rapod_over_ranks(self, comm, modes=None, singular_values=None, num_snapshots_in_associated_leafs=None, last_rapod=False,
                          modes_creator=None):
         rank = comm.Get_rank()
         size = comm.Get_size()
         final_modes = modes if rank == 0 else np.empty(shape=(0, 0))
+        svals = singular_values
         total_num_snapshots = None
 
         if rank == 0:
@@ -170,10 +230,13 @@ class HapodBasics:
             if final_modes is None:
                 final_modes, num_snapshots_in_associated_leafs = modes_creator()
             total_num_snapshots = num_snapshots_in_associated_leafs
+        timings_total = self.zero_timings_dict()
         for current_rank in range(1, comm.Get_size()):
             if rank == current_rank:
                 if modes is None:
                     modes, num_snapshots_in_associated_leafs = modes_creator()
+                else:
+                    modes.scal(svals)
                 comm.send(len(modes), dest=0, tag=current_rank+1000)
                 comm.send(num_snapshots_in_associated_leafs, dest=0, tag=current_rank+2000)
                 comm.Send(modes.data, dest=0, tag=current_rank+3000)
@@ -185,13 +248,19 @@ class HapodBasics:
                 total_num_snapshots += total_num_snapshots_on_source
                 modes_on_source = self.recv_vectorarray(comm, len_modes_on_source, source=current_rank,
                                                         tag=current_rank+3000)
-                final_modes.append(modes_on_source)
-                del modes_on_source
-                final_modes = self.pod_and_scal(final_modes, total_num_snapshots,
-                                                root_of_tree=(current_rank == size - 1 and last_rapod))
-        return final_modes, total_num_snapshots
+		if svals is None:
+                    final_modes.append(modes_on_source)
+                    del modes_on_source
+                    final_modes, svals, timings = self.pod(final_modes, total_num_snapshots)
+                else:
+                    final_modes, svals, timings = self.scal_and_pod_for_rapod(final_modes, svals, modes_on_source, total_num_snapshots,
+                                                          root_of_tree=(current_rank == size - 1 and last_rapod))
+                    del modes_on_source
+                for key in timings:
+                    timings_total[key] += timings[key]
+        return final_modes, svals, total_num_snapshots, timings_total
 
-    def calculate_total_projection_error(self, final_modes, total_num_snapshots, rank_wise=False):
+    def shared_memory_scatter_modes(self, final_modes):
         if final_modes is None:
             final_modes = np.empty(shape=(0, 0))
         final_modes_length = self.comm_world.bcast(len(final_modes), root=0)
@@ -212,8 +281,12 @@ class HapodBasics:
                 del v
             else:
                 self.comm_rank_0_group.Bcast(final_modes_numpy, root=0)
-
         final_modes = NumpyVectorArray(final_modes_numpy)
+        self.comm_world.Barrier()
+#        print("first", self.rank_proc, self.rank_world, len(final_modes), final_modes.components(range(0,3))[10])
+        return final_modes
+
+    def calculate_total_projection_error(self, final_modes, total_num_snapshots, rank_wise=False):
         if rank_wise: # calculate trajectory only on one rank per node at once to save memory
             for current_rank in range(0, self.size_proc):
                 if self.rank_proc == current_rank:
@@ -227,15 +300,20 @@ class HapodBasics:
         return error
 
     def rapod_on_trajectory(self):
-        modes = self.solver.next_n_time_steps(self.chunk_size)
+        modes = self.solver.next_n_time_steps(self.chunk_size, self.with_half_steps)
         total_num_snapshots = len(modes)
         chunks_done = 1
+        svals = None
         while not self.solver.finished():
-            next_vectors = self.solver.next_n_time_steps(self.chunk_size)
+            next_vectors = self.solver.next_n_time_steps(self.chunk_size, self.with_half_steps)
             total_num_snapshots += len(next_vectors)
             chunks_done += 1
-            modes.append(next_vectors)
-            del next_vectors
-            modes = self.pod_and_scal(modes, total_num_snapshots)
+            if svals is None:
+                modes.append(next_vectors)
+                del next_vectors
+                modes, svals, timings = self.pod(modes, total_num_snapshots)
+            else:
+                modes, svals, timings = self.scal_and_pod_for_rapod(modes, svals, next_vectors, total_num_snapshots)
+                del next_vectors
         assert chunks_done == self.num_chunks
-        return modes, total_num_snapshots
+        return modes, svals, total_num_snapshots, timings

@@ -149,6 +149,11 @@ public:
     return timestepper_->current_time();
   }
 
+  double t_end()
+  {
+    return 3.2;
+  }
+
   void set_current_time(const double time)
   {
     timestepper_->current_time() = time;
@@ -658,6 +663,7 @@ BOOST_PYTHON_MODULE(libboltzmann)
        .def("set_current_time", &BoltzmannSolver::set_current_time)
        .def("set_current_solution", &BoltzmannSolver::set_current_solution)
        .def("time_step_length", &BoltzmannSolver::time_step_length)
+       .def("t_end", &BoltzmannSolver::t_end)
       ;
 
   class_<typename BoltzmannSolver::SolutionVectorsVectorType>("SolutionVectorsVectorType")

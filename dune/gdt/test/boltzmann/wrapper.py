@@ -42,6 +42,9 @@ class Solver(object):
     def current_time(self):
         return self.impl.current_time()
 
+    def t_end(self):
+        return self.impl.t_end()
+
     def set_current_time(self, time):
         return self.impl.set_current_time(time)
 
@@ -76,7 +79,7 @@ class BoltzmannDiscretizationBase(DiscretizationBase):
     special_operators = frozenset({'lf', 'rhs'})
     special_vector_operators = frozenset({'initial_data'})
 
-    def __init__(self, nt=60, dt=0.056, initial_data=None, lf=None, rhs=None, operators=None, functionals=None,
+    def __init__(self, nt=60, dt=0.056, t_end=3.2, initial_data=None, lf=None, rhs=None, operators=None, functionals=None,
                  vector_operators=None, products=None, estimator=None, visualizer=None, parameter_space=None,
                  cache_region=None, name=None):
         super(BoltzmannDiscretizationBase, self).__init__(
@@ -86,6 +89,7 @@ class BoltzmannDiscretizationBase(DiscretizationBase):
         )
         self.nt = nt
         self.dt = dt
+        self.t_end = t_end
         self.solution_space = self.initial_data.range
         self.build_parameter_type(PARAMETER_TYPE, local_global=True)
         self.parameter_space = parameter_space
@@ -95,12 +99,15 @@ class BoltzmannDiscretizationBase(DiscretizationBase):
         U_half = U.empty()
         U_last = U.copy()
         rhs = self.rhs.assemble(mu)
+        final_dt = self.t_end - (self.nt - 1) * self.dt
+        assert final_dt >= 0 and final_dt <= self.dt
         for n in range(self.nt):
+            dt = self.dt if n != self.nt - 1 else final_dt
             self.logger.info('Time step {}'.format(n))
-            V = U_last - self.lf.apply(U_last) * self.dt
+            V = U_last - self.lf.apply(U_last) * dt
             if return_half_steps:
                 U_half.append(V)
-            U_last = V + rhs.apply(V, mu=mu) * self.dt
+            U_last = V + rhs.apply(V, mu=mu) * dt
             U.append(U_last)
         if return_half_steps:
             return U, U_half
@@ -113,7 +120,7 @@ class BoltzmannDiscretizationBase(DiscretizationBase):
 
 class DuneDiscretization(BoltzmannDiscretizationBase):
 
-    def __init__(self, *args):
+    def __init__(self, nt=60, dt=0.056, *args):
         self.solver = solver = Solver(*args)
         initial_data = VectorOperator(ListVectorArray([solver.get_initial_values()]))
         dim = initial_data.range.dim
@@ -132,7 +139,7 @@ class DuneDiscretization(BoltzmannDiscretizationBase):
                              ExpressionParameterFunctional('s[2]', PARAMETER_TYPE),
                              ExpressionParameterFunctional('s[3]', PARAMETER_TYPE)])
         param_space = CubicParameterSpace(PARAMETER_TYPE, 0., 10.)
-        super(DuneDiscretization, self).__init__(initial_data=initial_data, lf=lf_operator, rhs=rhs_operator, nt=60, dt=0.056,
+        super(DuneDiscretization, self).__init__(initial_data=initial_data, lf=lf_operator, rhs=rhs_operator, t_end = solver.t_end(), nt=nt, dt=dt,
                                                  parameter_space=param_space, name='DuneDiscretization')
 
     def _solve(self, mu=None, return_half_steps=False):
