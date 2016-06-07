@@ -18,7 +18,7 @@ def rapod_rank_wise():
         log_file = b.get_log_file(filename)
 
     # RAPOD 1 and 2: Perform a RAPOD on each node (processor)
-    modes, total_num_snapshots = b.rapod_over_ranks(b.comm_proc, modes_creator=b.rapod_on_trajectory)
+    modes, svals, total_num_snapshots = b.rapod_over_ranks(b.comm_proc, modes_creator=b.rapod_on_trajectory)
     b.solver = None
 
     if b.rank_world == 1:
@@ -26,10 +26,10 @@ def rapod_rank_wise():
                        str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2) + " GB\n")
 
     if b.rank_proc == 0:
-        final_modes, total_num_snapshots = b.rapod_over_ranks(b.comm_rank_0_group, modes, total_num_snapshots,
-                                                              last_rapod=True)
+        final_modes, svals, total_num_snapshots = b.rapod_over_ranks(b.comm_rank_0_group, modes, svals, total_num_snapshots,
+                                                                     last_rapod=True)
     else:
-        final_modes, total_num_snapshots = (np.empty(shape=(0,0)), None)
+        final_modes, svals, total_num_snapshots = (np.empty(shape=(0,0)), None, None)
 
     # write statistics to file
     if b.rank_world == 0:

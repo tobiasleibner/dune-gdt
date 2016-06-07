@@ -11,7 +11,7 @@ from scipy.linalg import eigh
 
 
 class HapodBasics:
-    def __init__(self, gridsize, chunk_size, solver_num_threads=1, epsilon_ast=1e-4):
+    def __init__(self, gridsize, chunk_size, solver_num_threads=1, epsilon_ast=1e-4, omega=0.5):
         self.gridsize = gridsize
         self.chunk_size = chunk_size
         self.with_half_steps = True
@@ -67,7 +67,7 @@ class HapodBasics:
         self.last_chunk_size = self.num_time_steps - chunk_size*(self.num_chunks-1.)
         assert self.num_chunks >= 2
         self.epsilon_ast = epsilon_ast
-        self.omega = 0.5
+        self.omega = omega
         self.rooted_tree_depth = None
 
     def create_solver(self, mu, num_threads=1):
@@ -82,7 +82,7 @@ class HapodBasics:
 
     def get_log_file(self, file_name):
         return open(file_name + "_gridsize_" + str(self.gridsize) + "_chunksize_" + str(self.chunk_size) + "_" +
-                    str(self.with_half_steps) + "_tol_" + str(self.epsilon_ast) + "_rank_" + str(self.rank_world), "w", 0)
+                    str(self.with_half_steps) + "_tol_" + str(self.epsilon_ast) + "_omega_" + str(self.omega) + "_rank_" + str(self.rank_world), "w", 0)
 
     def calculate_trajectory_error(self, finalmodes, num_threads=1):
         error = 0
@@ -224,11 +224,14 @@ class HapodBasics:
         final_modes = modes if rank == 0 else np.empty(shape=(0, 0))
         svals = singular_values
         total_num_snapshots = None
+        max_vecs_before_pod = len(final_modes) if final_modes is not None else 0
+        max_local_modes = 0 
 
         if rank == 0:
             del modes
             if final_modes is None:
                 final_modes, num_snapshots_in_associated_leafs = modes_creator()
+                max_vecs_before_pod = max(max_vecs_before_pod, len(final_modes))
             total_num_snapshots = num_snapshots_in_associated_leafs
         timings_total = self.zero_timings_dict()
         for current_rank in range(1, comm.Get_size()):
@@ -248,17 +251,20 @@ class HapodBasics:
                 total_num_snapshots += total_num_snapshots_on_source
                 modes_on_source = self.recv_vectorarray(comm, len_modes_on_source, source=current_rank,
                                                         tag=current_rank+3000)
+                max_vecs_before_pod = max(max_vecs_before_pod, len(final_modes) + len_modes_on_source)
 		if svals is None:
                     final_modes.append(modes_on_source)
                     del modes_on_source
                     final_modes, svals, timings = self.pod(final_modes, total_num_snapshots)
+                    max_local_modes = max(max_local_modes, len(final_modes))
                 else:
                     final_modes, svals, timings = self.scal_and_pod_for_rapod(final_modes, svals, modes_on_source, total_num_snapshots,
                                                           root_of_tree=(current_rank == size - 1 and last_rapod))
+                    max_local_modes = max(max_local_modes, len(final_modes))
                     del modes_on_source
                 for key in timings:
                     timings_total[key] += timings[key]
-        return final_modes, svals, total_num_snapshots, timings_total
+        return final_modes, svals, total_num_snapshots, timings_total, max_vecs_before_pod, max_local_modes
 
     def shared_memory_scatter_modes(self, final_modes):
         if final_modes is None:
@@ -315,5 +321,6 @@ class HapodBasics:
             else:
                 modes, svals, timings = self.scal_and_pod_for_rapod(modes, svals, next_vectors, total_num_snapshots)
                 del next_vectors
-        assert chunks_done == self.num_chunks
+        print(chunks_done, self.num_chunks)
+        assert chunks_done == int(self.num_chunks)
         return modes, svals, total_num_snapshots, timings

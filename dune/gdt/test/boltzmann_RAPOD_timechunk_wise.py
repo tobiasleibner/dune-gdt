@@ -40,7 +40,8 @@ def rapod_timechunk_wise():
             if b.rank_world == 0:
                 log_file.write("In the third pod, in step " + str(i) + " there are " + str(len(modes)) +
                                " of " + str(total_num_snapshots) + " left!\n")
-    b.solver = None
+    if b.rank_world != 0:
+        b.solver = None
 
     if b.rank_world == 1:
         log_file.write("The maximum amount of memory used on rank " + str(b.rank_world) + " was: " +
@@ -54,7 +55,7 @@ def rapod_timechunk_wise():
 
     # write statistics to file
     if b.rank_world == 0:
-        log_file.write("There was a total of " + str(total_num_snapshots) + " snapshots!\n")
+        log_file.write("There were " + str(len(final_modes)) + " basis vectors taken from a total of " + str(total_num_snapshots) + " snapshots!\n")
         log_file.write("The maximum amount of memory used on rank 0 was: " +
                        str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2) + " GB\n")
         elapsed = timer() - start
@@ -72,8 +73,11 @@ def rapod_timechunk_wise():
         log_file.write("The maximum amount of memory used calculating the error on rank " + str(b.rank_world) +
                        " was: " + str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2) + " GB\n")
         log_file.close()
+    if b.rank_world != 0:
+        final_modes = None
+    return (final_modes, b)
 
-
-rapod_timechunk_wise()
+if __name__ == "__main__":
+    rapod_timechunk_wise()
 
 
