@@ -196,8 +196,10 @@ public:
     , communicator_prepared_(false)
   {
     // make sure our new communicator is prepared if other's was
-    if (other.communicator_prepared_)
-      const auto& DUNE_UNUSED(comm) = this->communicator();
+    if (other.communicator_prepared_) {
+      const auto& comm = this->communicator();
+      (void)comm;
+    }
   }
 
   /**
@@ -305,8 +307,10 @@ public:
     , communicator_prepared_(false)
   {
     // make sure our new communicator is prepared if other's was
-    if (other.communicator_prepared_)
-      const auto& DUNE_UNUSED(comm) = this->communicator();
+    if (other.communicator_prepared_) {
+      const auto& comm = this->communicator();
+      (void)comm;
+    }
   }
 
   DunePdelabDgProductSpaceWrapper(ThisType&& source) = default;

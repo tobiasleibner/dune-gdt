@@ -97,12 +97,12 @@ public:
    */
   virtual TimeFieldType step(const TimeFieldType dt, const TimeFieldType max_dt) = 0;
 
-  virtual TimeFieldType step_first(const TimeFieldType dt, const TimeFieldType max_dt)
+  virtual TimeFieldType step_first(const TimeFieldType /*dt*/, const TimeFieldType /*max_dt*/)
   {
     return 0;
   }
 
-  virtual TimeFieldType step_second(const TimeFieldType dt1, const TimeFieldType actual_dt)
+  virtual TimeFieldType step_second(const TimeFieldType /*dt1*/, const TimeFieldType /*actual_dt*/)
   {
     return 0;
   }
