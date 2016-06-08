@@ -189,13 +189,14 @@ class HapodBasics:
             v.data[:] = vv
         return listvectorarray
 
-    def gather_on_rank_0(self, comm, vectorarray, num_snapshots_on_rank, uniform_num_modes=True):
+    def gather_on_rank_0(self, comm, vectorarray, num_snapshots_on_rank, uniform_num_modes=True, return_displacements=False):
         rank = comm.Get_rank()
         num_snapshots_in_associated_leafs = comm.reduce(num_snapshots_on_rank, op=MPI.SUM, root=0)
         total_num_modes = comm.reduce(len(vectorarray), op=MPI.SUM, root=0)
         # create empty numpy array on rank 0 as a buffer to receive the pod modes from each core
         vectors_gathered = np.empty(shape=(total_num_modes, self.vector_length)) if rank == 0 else None
         # gather the modes (as numpy array, thus the call to data) in vectors_gathered.
+        displacements = []
         if uniform_num_modes:
             comm.Gather(vectorarray.data, vectors_gathered, root=0)
         else:
@@ -211,7 +212,10 @@ class HapodBasics:
         vectorarray._list = None
         if rank == 0:
             vectors_gathered = self.convert_to_listvectorarray(vectors_gathered)
-        return vectors_gathered, num_snapshots_in_associated_leafs
+        if return_displacements:
+            return vectors_gathered, num_snapshots_in_associated_leafs, displacements
+        else:
+            return vectors_gathered, num_snapshots_in_associated_leafs
 
     def zero_timings_dict(self):
         return {"gramian" : 0., "EV decomp": 0., "left-sing vecs": 0., "reorthonormalizing": 0., "check": 0.}
