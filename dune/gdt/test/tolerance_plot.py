@@ -67,7 +67,7 @@ svals_pod = []
 
 filename_tcw = "/scratch/tmp/l_tobi01/pickled_bases/tcw_gridsize_" + str(grid_size) + "_chunk_" + str(chunk_size) + "_omega_" + str(omega)
 filename_traj = "/scratch/tmp/l_tobi01/pickled_bases/traj_gridsize_" + str(grid_size) + "_chunk_" + str(chunk_size) + "_omega_" + str(omega)
-filename_pod = "/scratch/tmp/l_tobi01/pickled_bases/pod_gridsize_" + str(grid_size) + "_omega_" + str(omega)
+filename_pod = "/scratch/tmp/l_tobi01/pickled_bases/pod_gridsize_" + str(grid_size)
 
 x_axis = []
 
