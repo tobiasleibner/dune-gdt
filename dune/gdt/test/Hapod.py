@@ -66,6 +66,7 @@ class HapodBasics:
         self.num_chunks = math.ceil(self.num_time_steps / chunk_size)
         self.last_chunk_size = self.num_time_steps - chunk_size*(self.num_chunks-1.)
         assert self.num_chunks >= 2
+        assert self.last_chunk_size >= 1 and self.last_chunk_size <= self.chunk_size
         self.epsilon_ast = epsilon_ast
         self.omega = omega
         self.rooted_tree_depth = None

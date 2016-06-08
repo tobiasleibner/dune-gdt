@@ -11,7 +11,7 @@ def rapod_timechunk_wise(grid_size, chunk_size, tol, log=True, scatter_modes=Tru
     max_vectors_before_pod = 0
     max_local_modes = 0
 
-    b = HapodBasics(grid_size, chunk_size, 1, tol, omega=omega)
+    b = HapodBasics(grid_size, chunk_size, epsilon_ast=tol, omega=omega)
     b.rooted_tree_depth = b.num_chunks + b.size_rank_0_group
 
     filename = "RAPOD_timechunk_wise_stephans_pod"

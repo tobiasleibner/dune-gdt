@@ -24,7 +24,6 @@ def calculate_mean_l2_error_for_random_samples(basis, b, seed = MPI.COMM_WORLD.G
     nt = int(b.num_time_steps - 1) if not b.with_half_steps else int((b.num_time_steps - 1)/2)
     d = DuneDiscretization(nt,
                            b.solver.time_step_length(),
-                           1,
                            '',
                            2000000,
                            b.gridsize,
