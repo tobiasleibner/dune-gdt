@@ -11,7 +11,7 @@ from scipy.linalg import eigh
 
 
 class HapodBasics:
-    def __init__(self, gridsize, chunk_size, solver_num_threads=1, epsilon_ast=1e-4, omega=0.5):
+    def __init__(self, gridsize, chunk_size, epsilon_ast=1e-4, omega=0.5):
         self.gridsize = gridsize
         self.chunk_size = chunk_size
         self.with_half_steps = True
@@ -70,9 +70,8 @@ class HapodBasics:
         self.omega = omega
         self.rooted_tree_depth = None
 
-    def create_solver(self, mu, num_threads=1):
-        return wrapper.Solver(num_threads,
-                              "boltzmann_sigma_s_s_" + str(mu[0]) + "_a_" + str(mu[1]) +
+    def create_solver(self, mu):
+        return wrapper.Solver("boltzmann_sigma_s_s_" + str(mu[0]) + "_a_" + str(mu[1]) +
                               "sigma_t_s_" + str(mu[2]) + "_a_" + str(mu[3]),
                               2000000,
                               self.gridsize,
@@ -84,9 +83,9 @@ class HapodBasics:
         return open(file_name + "_gridsize_" + str(self.gridsize) + "_chunksize_" + str(self.chunk_size) + "_" +
                     str(self.with_half_steps) + "_tol_" + str(self.epsilon_ast) + "_omega_" + str(self.omega) + "_rank_" + str(self.rank_world), "w", 0)
 
-    def calculate_trajectory_error(self, finalmodes, num_threads=1):
+    def calculate_trajectory_error(self, finalmodes):
         error = 0
-        solver = self.create_solver(self.parameters, num_threads=num_threads)
+        solver = self.create_solver(self.parameters)
         while not solver.finished():
             next_vectors = solver.next_n_time_steps(1, self.with_half_steps)
             next_vectors_npvecarray = NumpyVectorArray(np.zeros(shape=(len(next_vectors), self.vector_length)))
