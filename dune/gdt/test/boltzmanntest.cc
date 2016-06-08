@@ -42,9 +42,10 @@
 
 using namespace Dune::GDT;
 
+typedef std::mt19937 RandomNumberGeneratorType;
+
 DSC::FieldMatrix< double, 7, 7 > create_random_sigma_s(const double lower_bound, const double upper_bound)
 {
-typedef std::mt19937 RandomNumberGeneratorType;  // the Mersenne Twister with a popular choice of parameters
 static RandomNumberGeneratorType rng{std::random_device()()};
 std::uniform_real_distribution<double> distribution(lower_bound,upper_bound);
 DSC::FieldMatrix< double, 7, 7 > ret;
@@ -58,7 +59,6 @@ return ret;
 
 DSC::FieldMatrix< double, 7, 7 > create_random_sigma_t(const double lower_bound, const double upper_bound, const DSC::FieldMatrix< double, 7, 7 >& sigma_s)
 {
-typedef std::mt19937 RandomNumberGeneratorType;  // the Mersenne Twister with a popular choice of parameters
 static RandomNumberGeneratorType rng{std::random_device()()};
 std::uniform_real_distribution<double> distribution(lower_bound, upper_bound);
 DSC::FieldMatrix< double, 7, 7 > ret;
@@ -75,10 +75,9 @@ class BoltzmannSolver
 {
 public:
   // set dimensions
-  static const size_t dimDomain = 2;
   // for dimRange > 250, an "exceeded maximum recursive template instantiation limit" error occurs (tested with
   // clang 3.5). You need to pass -ftemplate-depth=N with N > dimRange + 10 to clang for higher dimRange.
-  // for Boltzmann2D, this is not dimRange but the maximal moment order
+  static const size_t dimDomain = 2;
   static const size_t momentOrder = 15;
 
   typedef Dune::YaspGrid< dimDomain >  GridType;
@@ -109,12 +108,12 @@ public:
   typedef typename TimeStepperType::SolutionType SolutionType;
   typedef std::vector< VectorType > SolutionVectorsVectorType;
 
-  BoltzmannSolver(const size_t num_threads, const std::string output_dir, const size_t num_save_steps,
+  BoltzmannSolver(const std::string output_dir, const size_t num_save_steps,
                   const size_t grid_size, const bool visualize_solution, const bool silent,
                   const std::string sigma_s_in, const std::string sigma_t_in)
   {
     auto num_save_steps_copy = num_save_steps;
-    if (num_save_steps > 1e6)
+    if (num_save_steps > 1e6) // hack to allow for size_t(-1) when called from the python bindings
         num_save_steps_copy = size_t(-1);
     auto random_sigma_s = create_random_sigma_s(0.0,10.0);
     auto random_sigma_t = create_random_sigma_t(0.0,10.0, random_sigma_s);
@@ -127,20 +126,20 @@ public:
     checkerboard_config["sigma_t"] = sigma_t;
     const auto problem_config = ProblemType::default_config(checkerboard_config);
 
-    init(num_threads, output_dir, num_save_steps_copy, grid_size, visualize_solution, true, problem_config);
+    init(output_dir, num_save_steps_copy, grid_size, visualize_solution, true, problem_config);
     silent_ = silent;
   }
 
-  BoltzmannSolver(const size_t num_threads = 1, const std::string output_dir = "boltzmann", const size_t num_save_steps = 10,
+  BoltzmannSolver(const std::string output_dir = "boltzmann", const size_t num_save_steps = 10,
                   const size_t grid_size = 50, const bool visualize_solution = true, const bool silent = false,
                   const RangeFieldType sigma_s_scattering = 1, const RangeFieldType sigma_s_absorbing = 0,
                   const RangeFieldType sigma_a_scattering = 0, const RangeFieldType sigma_a_absorbing = 10)
   {
     auto num_save_steps_copy = num_save_steps;
-    if (num_save_steps > 1e6)
+    if (num_save_steps > 1e6) // hack to allow for size_t(-1) when called from the python bindings
         num_save_steps_copy = size_t(-1);
     const auto problem_config = ProblemType::default_config(sigma_s_scattering, sigma_s_absorbing, sigma_s_scattering + sigma_a_scattering, sigma_s_absorbing + sigma_a_absorbing);
-    init(num_threads, output_dir, num_save_steps_copy, grid_size, visualize_solution, true, problem_config);
+    init(output_dir, num_save_steps_copy, grid_size, visualize_solution, true, problem_config);
     silent_ = silent;
   }
 
@@ -180,13 +179,13 @@ public:
     DSC_PROFILER.stopTiming("fv.solve");
     if (!silent_)
       std::cout << "Solving took: " << DSC_PROFILER.getTiming("fv.solve")/1000.0 << "s" << std::endl;
-    // visualize solution
-    if (!silent_)
-      std::cout << "Visualizing... ";
-    if (visualize_solution_)
+    if (visualize_solution_) {
+      if (!silent_)
+        std::cout << "Visualizing... ";
       timestepper_->visualize_factor_of_solution< 0 >(file_path_);
-    if (!silent_)
-      std::cout << " done" << std::endl;
+      if (!silent_)
+        std::cout << " done" << std::endl;
+    }
     std::vector< VectorType > ret;
     for (const auto& pair : timestepper_->solution())
       ret.push_back(pair.second.vector());
@@ -266,7 +265,7 @@ public:
     return DSC::FloatCmp::eq(timestepper_->current_time(), 3.2);
   }
 
-  void init(const size_t num_threads = 1, const std::string output_dir = "boltzmann", const size_t num_save_steps = 10,
+  void init(const std::string output_dir = "boltzmann", const size_t num_save_steps = 10,
             const size_t grid_size = 50, const bool visualize_solution = true, const bool silent = false,
             const ConfigType problem_config = ProblemType::default_config())
   {
@@ -283,9 +282,6 @@ public:
     file_path_ = output_dir;
     num_save_steps_ = num_save_steps;
     // setup threadmanager
-    DSC_CONFIG.set("threading.partition_factor", 1, true);
-    DS::threadManager().set_max_threads(num_threads);
-    DSC_CONFIG.set("threading.max_count", DSC::toString(num_threads), true);
     DSC_CONFIG.set("global.datadir", output_dir, true);
     DSC_PROFILER.setOutputdir(output_dir);
     //choose GridType
@@ -379,121 +375,6 @@ private:
 };
 
 
-int main(int argc, char* argv[])
-{
-  try {
-    // parse options
-    if (argc == 1)
-      std::cout << "Usage: " << argv[0] << "[-threading.max_count THREADS -global.datadir DIR -num_save_steps NUM -gridsize GRIDSIZE -no_visualization -silent -sigma_s SIGMA_S_MATRIX -sigma_t SIGMA_T_MATRIX]" << std::endl;
-
-    size_t num_threads = 1;
-    size_t num_save_steps = 10;
-    size_t grid_size = 50;
-    bool visualize = true;
-    bool silent = false;
-    std::string output_dir, sigma_s, sigma_t;
-    double sigma_s_lower = 0, sigma_s_upper = 1, sigma_a_lower = 0, sigma_a_upper = 10;
-    for (int i = 1; i < argc; ++i) {
-      if (std::string(argv[i]) == "-threading.max_count") {
-        if (i + 1 < argc) { // Make sure we aren't at the end of argv!
-          num_threads = DSC::fromString< size_t >(argv[++i]); // Increment 'i' so we don't get the argument as the next argv[i].
-        } else {
-          std::cerr << "-threading.max_count option requires one argument." << std::endl;
-          return 1;
-        }
-      } else if (std::string(argv[i]) == "-global.datadir") {
-        if (i + 1 < argc) {
-          output_dir = argv[++i];
-        } else {
-          std::cerr << "-global.datadir option requires one argument." << std::endl;
-          return 1;
-        }
-      } else if (std::string(argv[i]) == "-num_save_steps") {
-        if (i + 1 < argc) {
-          num_save_steps = DSC::fromString< size_t >(argv[++i]);
-        } else {
-          std::cerr << "-num_save_steps option requires one argument." << std::endl;
-          return 1;
-        }
-      } else if (std::string(argv[i]) == "-no_visualization") {
-        visualize = false;
-        i++;
-      } else if (std::string(argv[i]) == "-silent") {
-        silent = true;
-        i++;
-      } else if (std::string(argv[i]) == "-num_save_steps") {
-        if (i + 1 < argc) {
-          num_save_steps = DSC::fromString< size_t >(argv[++i]);
-        } else {
-          std::cerr << "-num_save_steps option requires one argument." << std::endl;
-          return 1;
-        }
-      } else if (std::string(argv[i]) == "-gridsize") {
-        if (i + 1 < argc) {
-          grid_size = DSC::fromString< size_t >(argv[++i]);
-        } else {
-          std::cerr << "-gridsize option requires one argument." << std::endl;
-          return 1;
-        }
-      } else if (std::string(argv[i]) == "-sigma_s") {
-        if (i + 1 < argc) {
-          sigma_s = argv[++i];
-        } else {
-          std::cerr << "-sigma_s option requires one argument." << std::endl;
-          return 1;
-        }
-      } else if (std::string(argv[i]) == "-sigma_t") {
-        if (i + 1 < argc) {
-          sigma_t = argv[++i];
-        } else {
-          std::cerr << "-sigma_t option requires one argument." << std::endl;
-          return 1;
-        }
-      } else if (std::string(argv[i]) == "-sigma_s_lower") {
-        if (i + 1 < argc) {
-          sigma_s_lower = DSC::fromString<double>(argv[++i]);
-        } else {
-            std::cerr << "-sigma_s_lower option requires one argument." << std::endl;
-            return 1;
-          }
-      } else if (std::string(argv[i]) == "-sigma_s_upper") {
-        if (i + 1 < argc) {
-          sigma_s_upper = DSC::fromString<double>(argv[++i]);
-        } else {
-            std::cerr << "-sigma_s_upper option requires one argument." << std::endl;
-            return 1;
-          }
-      } else if (std::string(argv[i]) == "-sigma_a_lower") {
-        if (i + 1 < argc) {
-          sigma_a_lower = DSC::fromString<double>(argv[++i]);
-        } else {
-            std::cerr << "-sigma_a_lower option requires one argument." << std::endl;
-            return 1;
-          }
-      } else if (std::string(argv[i]) == "-sigma_a_upper") {
-        if (i + 1 < argc) {
-          sigma_a_upper = DSC::fromString<double>(argv[++i]);
-        } else {
-            std::cerr << "-sigma_a_upper option requires one argument." << std::endl;
-            return 1;
-          }
-      } else {
-        std::cerr << "Unknown option " << std::string(argv[i]) << std::endl;
-        return 1;
-      }
-    }
-
-    BoltzmannSolver solver(num_threads, output_dir, 5, grid_size, true, false);
-    solver.solve();
-
-    return 0;
-  } catch (Dune::Exception& e) {
-    std::cerr << "Dune reported: " << e.what() << std::endl;
-    std::abort();
-  }
-} // ... main(...)
-
-//------------------------------------
 // Python bindings
 #include <boost/python/suite/indexing/vector_indexing_suite.hpp>
 
@@ -588,52 +469,8 @@ struct VectorExporter
   }
 };
 
-//template< class Traits, class ScalarImp = typename Traits::ScalarType >
-//class VectorInterface
-//  : public ContainerInterface< Traits, ScalarImp >
-//  , public Tags::VectorInterface
-//{
-//public:
-//  typedef typename Traits::derived_type                       derived_type;
-//  typedef typename Dune::FieldTraits< ScalarImp >::field_type ScalarType;
-//  typedef typename Dune::FieldTraits< ScalarImp >::real_type  RealType;
-//  static const constexpr ChooseBackend                        dense_matrix_type  = Traits::dense_matrix_type;
-//  static const constexpr ChooseBackend                        sparse_matrix_type = Traits::sparse_matrix_type;
 
-//  typedef internal::VectorInputIterator< Traits, ScalarType >  const_iterator;
-//  typedef internal::VectorOutputIterator< Traits, ScalarType > iterator;
-
-//  inline ScalarType& get_entry_ref(const size_t ii)
-
-//  inline const ScalarType& get_entry_ref(const size_t ii) const
-
-//  inline ScalarType& operator[](const size_t ii)
-
-//  inline const ScalarType& operator[](const size_t ii) const
-
-//  virtual bool almost_equal(const derived_type& other,
-//                            const RealType epsilon = Stuff::Common::FloatCmp::DefaultEpsilon< RealType >::value()) const
-
-//  template< class T >
-//  bool almost_equal(const VectorInterface< T >& other,
-//                    const RealType epsilon = Stuff::Common::FloatCmp::DefaultEpsilon< RealType >::value()) const
-
-//  virtual derived_type operator*(const ScalarType& alpha) const
-
-//  virtual ScalarType operator*(const derived_type& other) const
-
-//  virtual derived_type& operator+=(const ScalarType& scalar)
-
-//  virtual derived_type& operator-=(const ScalarType& scalar)
-
-//  virtual derived_type& operator/=(const ScalarType& scalar)
-
-//  virtual bool operator==(const derived_type& other) const
-
-//  virtual bool operator!=(const derived_type& other) const
-
-
-BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(init_overloads, BoltzmannSolver::init, 0, 7)
+BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(init_overloads, BoltzmannSolver::init, 0, 6)
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(apply_rhs_overloads, BoltzmannSolver::apply_rhs_operator, 3, 6)
 BOOST_PYTHON_MEMBER_FUNCTION_OVERLOADS(next_n_time_steps_overloads, BoltzmannSolver::next_n_time_steps, 1, 2)
 
@@ -646,8 +483,11 @@ BOOST_PYTHON_MODULE(libboltzmann)
                                                           const RangeFieldType, const RangeFieldType,
                                                           const RangeFieldType) = &BoltzmannSolver::apply_rhs_operator;
 
-  class_<BoltzmannSolver>("BoltzmannSolver", init< optional< const size_t, const std::string, const size_t, const size_t, const bool, const bool, const double, const double, const double, const double > >())
-       .def(init< const size_t, const std::string, const size_t, const size_t, const bool, const bool, const std::string, const std::string >())
+  class_<BoltzmannSolver>("BoltzmannSolver",
+                          init< optional< const std::string, const size_t, const size_t, const bool,
+                                          const bool, const double, const double, const double, const double > >())
+       .def(init< const std::string, const size_t, const size_t, const bool, const bool,
+                  const std::string, const std::string >())
        .def("init", &BoltzmannSolver::init, init_overloads())
        .def("solve", &BoltzmannSolver::solve)
        .def("next_n_time_steps", &BoltzmannSolver::next_n_time_steps, next_n_time_steps_overloads())
@@ -673,6 +513,182 @@ BOOST_PYTHON_MODULE(libboltzmann)
 
   VectorExporter< typename Dune::Stuff::LA::CommonDenseVector< double > >::export_("CommonDenseVector");
 }
+
+
+int main(int argc, char* argv[])
+{
+  try {
+    // parse options
+    if (argc == 1)
+      std::cout << "The following options are available: "
+                << argv[0]
+                << " [-output_dir DIR -num_save_steps INT -gridsize INT "
+                << "  -sigma_s_1 FLOAT -sigma_s_2 FLOAT -sigma_a_1 FLOAT -sigma_a_2 FLOAT"
+                << " --no_visualization --silent --random_parameters --totally_random_parameters]"
+                << std::endl;
+
+    size_t num_save_steps = 10;
+    size_t grid_size = 50;
+    bool visualize = true;
+    bool silent = false;
+    bool random_parameters = false;
+    bool totally_random_parameters = false;
+    bool parameters_given = false;
+    std::string output_dir;
+    double sigma_s_lower = 0, sigma_s_upper = 8, sigma_a_lower = 0, sigma_a_upper = 8;
+    double sigma_s_1 = 1, sigma_s_2 = 0, sigma_a_1 = 0, sigma_a_2 = 10;
+    for (int i = 1; i < argc; ++i) {
+      if (std::string(argv[i]) == "-output_dir") {
+        if (i + 1 < argc) {
+          output_dir = argv[++i];
+        } else {
+          std::cerr << "-output_dir option requires one argument." << std::endl;
+          return 1;
+        }
+      } else if (std::string(argv[i]) == "-num_save_steps") {
+        if (i + 1 < argc) {
+          num_save_steps = DSC::fromString< size_t >(argv[++i]);
+        } else {
+          std::cerr << "-num_save_steps option requires one argument." << std::endl;
+          return 1;
+        }
+      } else if (std::string(argv[i]) == "--no_visualization") {
+        visualize = false;
+      } else if (std::string(argv[i]) == "--silent") {
+        silent = true;
+      } else if (std::string(argv[i]) == "--random_parameters") {
+        if (totally_random_parameters) {
+          std::cerr << "Options --random_parameters and --totally-random_parameters are not compatible!" << std::endl;
+          return 1;
+        }
+        if (parameters_given) {
+          std::cerr << "You specified a value for at least one parameter so you can't use --random_parameters!"
+                    << std::endl;
+          return 1;
+        }
+        random_parameters = true;
+        RandomNumberGeneratorType rng{std::random_device()()};
+        std::uniform_real_distribution<double> sigma_s_dist(sigma_s_lower, sigma_s_upper);
+        std::uniform_real_distribution<double> sigma_a_dist(sigma_a_lower, sigma_a_upper);
+        sigma_s_1 = sigma_s_dist(rng);
+        sigma_s_2 = sigma_s_dist(rng);
+        sigma_a_1 = sigma_a_dist(rng);
+        sigma_a_2 = sigma_a_dist(rng);
+      } else if (std::string(argv[i]) == "--totally_random_parameters") {
+        if (random_parameters) {
+          std::cerr << "Options --random_parameters and --totally-random_parameters are not compatible!" << std::endl;
+          return 1;
+        }
+        if (parameters_given) {
+          std::cerr << "You specified a value for at least one parameter so you can't use --totally_random_parameters!"
+                    << std::endl;
+          return 1;
+        }
+        totally_random_parameters = true;
+      } else if (std::string(argv[i]) == "-gridsize") {
+        if (i + 1 < argc) {
+          grid_size = DSC::fromString< size_t >(argv[++i]);
+        } else {
+          std::cerr << "-gridsize option requires one argument." << std::endl;
+          return 1;
+        }
+      } else if (std::string(argv[i]) == "-sigma_s_1") {
+        if (random_parameters || totally_random_parameters) {
+          std::cerr << "You specified a value for at least one parameter on the command line so you can't use "
+                    << "--random_parameters or --totally_random_parameters!" << std::endl;
+          return 1;
+        }
+        if (i + 1 < argc) {
+          sigma_s_1 = DSC::fromString< double >(argv[++i]);
+          parameters_given = true;
+        } else {
+          std::cerr << "-sigma_s_1 option requires one argument." << std::endl;
+          return 1;
+        }
+      } else if (std::string(argv[i]) == "-sigma_s_2") {
+        if (random_parameters || totally_random_parameters) {
+          std::cerr << "You specified a value for at least one parameter on the command line so you can't use "
+                    << "--random_parameters or --totally_random_parameters!" << std::endl;
+          return 1;
+        }
+        if (i + 1 < argc) {
+          sigma_s_2 = DSC::fromString< double >(argv[++i]);
+          parameters_given = true;
+        } else {
+          std::cerr << "-sigma_s_2 option requires one argument." << std::endl;
+          return 1;
+        }
+      } else if (std::string(argv[i]) == "-sigma_a_1") {
+        if (random_parameters || totally_random_parameters) {
+          std::cerr << "You specified a value for at least one parameter on the command line so you can't use "
+                    << "--random_parameters or --totally_random_parameters!" << std::endl;
+          return 1;
+        }
+        if (i + 1 < argc) {
+          sigma_a_1 = DSC::fromString< double >(argv[++i]);
+          parameters_given = true;
+        } else {
+          std::cerr << "-sigma_a_1 option requires one argument." << std::endl;
+          return 1;
+        }
+      } else if (std::string(argv[i]) == "-sigma_a_2") {
+        if (random_parameters || totally_random_parameters) {
+          std::cerr << "You specified a value for at least one parameter on the command line so you can't use "
+                    << "--random_parameters or --totally_random_parameters!" << std::endl;
+          return 1;
+        }
+        if (i + 1 < argc) {
+          sigma_a_2 = DSC::fromString< double >(argv[++i]);
+          parameters_given = true;
+        } else {
+          std::cerr << "-sigma_a_2 option requires one argument." << std::endl;
+          return 1;
+        }
+      } else {
+        std::cerr << "Unknown option " << std::string(argv[i]) << std::endl;
+        return 1;
+      }
+    }
+
+    std::ofstream parameterfile;
+    parameterfile.open(output_dir + "_parameters.txt");
+    parameterfile << "Gridsize: " << DSC::toString(grid_size) + " x " + DSC::toString(grid_size) << std::endl;
+
+    // run solver
+    std::shared_ptr< BoltzmannSolver > solver;
+    if (totally_random_parameters) {
+      const auto sigma_s_matrix = create_random_sigma_s(sigma_s_lower, sigma_s_upper);
+      const auto sigma_t_matrix = create_random_sigma_t(sigma_a_lower, sigma_a_upper, sigma_s_matrix);
+      auto sigma_a_matrix = sigma_t_matrix;
+      sigma_a_matrix -= sigma_s_matrix;
+      parameterfile << "Random parameters chosen on each square of the 7x7 checkerboard domain were: " << std::endl
+                    << "sigma_s: " << DSC::toString(sigma_s_matrix) << std::endl
+                    << "sigma_a: " << DSC::toString(sigma_a_matrix) << std::endl;
+      solver = std::make_shared< BoltzmannSolver >(output_dir, num_save_steps, grid_size, visualize,
+                                                   silent, DSC::toString(sigma_s_matrix), DSC::toString(sigma_t_matrix));
+    } else {
+      parameterfile << "Domain was composed of two materials, parameters were: " << std::endl
+                    << "First material: sigma_s = " + DSC::toString(sigma_s_1)
+                       + ", sigma_a = " + DSC::toString(sigma_a_1) << std::endl
+                    << "Second material: sigma_s = " + DSC::toString(sigma_s_2)
+                       + ", sigma_a = " + DSC::toString(sigma_a_2) << std::endl;
+
+      solver = std::make_shared< BoltzmannSolver >(output_dir, num_save_steps, grid_size, visualize,
+                                                   silent, sigma_s_1, sigma_s_2, sigma_a_1, sigma_a_2);
+    }
+
+    DSC_PROFILER.startTiming("solve_all");
+    solver->solve();
+    DSC_PROFILER.stopTiming("solve_all");
+    parameterfile << "Elapsed time: " << DSC_PROFILER.getTiming("solve_all")/1000.0 << " s" << std::endl;
+    parameterfile.close();
+
+    return 0;
+  } catch (Dune::Exception& e) {
+    std::cerr << "Dune reported: " << e.what() << std::endl;
+    std::abort();
+  }
+} // ... main(...)
 
 
 
