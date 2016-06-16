@@ -254,6 +254,9 @@ class DuneStuffVector(VectorInterface):
     def l2_norm(self):
         return self.impl.l2_norm()
 
+    def l2_norm2(self):
+        return self.impl.l2_norm()
+
     def sup_norm(self):
         return self.impl.sup_norm()
 
