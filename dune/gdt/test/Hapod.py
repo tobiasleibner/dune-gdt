@@ -3,11 +3,37 @@ from pymor.basic import *
 from mpi4py import MPI
 import numpy as np
 import resource
-from timeit import default_timer as timer
 import sys
 import math
 import random
 from scipy.linalg import eigh
+
+
+def create_and_scatter_parameters(comm, min_param=0., max_param=8.):
+    # Samples all 3 parameters uniformly with the same width and adds random parameter combinations until
+    # comm.Get_size() parameters are created. After that, parameter combinations are scattered to ranks.
+    num_samples_per_parameter = int(comm.Get_size()**(1/3))
+    sample_width = max_param - min_param / (num_samples_per_parameter - 1)
+    sigma_s_scattering_range = sigma_s_absorbing_range = sigma_a_absorbing_range = np.arange(min_param,
+                                                                                             max_param + 1e-13,
+                                                                                             sample_width)
+    sigma_a_scattering_range = [0.]
+    parameters_list = []
+    for sigma_s_scattering in sigma_s_scattering_range:
+        for sigma_s_absorbing in sigma_s_absorbing_range:
+            for sigma_a_scattering in sigma_a_scattering_range:
+                for sigma_a_absorbing in sigma_a_absorbing_range:
+                    parameters_list.append([sigma_s_scattering,
+                                            sigma_s_absorbing,
+                                            sigma_a_scattering,
+                                            sigma_a_absorbing])
+    while len(parameters_list) < comm.Get_size():
+        parameters_list.append([random.uniform(min_param, max_param),
+                                random.uniform(min_param, max_param),
+                                0.,
+                                random.uniform(min_param, max_param)])
+
+    return comm.scatter(parameters_list, root=0)
 
 
 class HapodBasics:
@@ -34,7 +60,6 @@ class HapodBasics:
         self.comm_proc = MPI.Intracomm.Split(self.comm_world, proc_numbers[proc_name], self.rank_world)
         self.size_proc = self.comm_proc.Get_size()
         self.rank_proc = self.comm_proc.Get_rank()
-        #print(self.proc_name, self.rank_proc, proc_numbers[proc_name])
 
         # create communicator containing rank 0 processes on each processor
         self.contained_in_rank_0_group = 1 if self.rank_proc == 0 else 0
@@ -43,29 +68,8 @@ class HapodBasics:
         self.rank_rank_0_group = self.comm_rank_0_group.Get_rank()
 
         # Preparation: Parameter selection
-        # Choose parameters and scatter to cores
-        min_param = 0.
-        max_param = 8.
-        num_samples_per_parameter = int(self.size_world**(1/3))
-        sample_width = max_param - min_param / (num_samples_per_parameter - 1)
-        sigma_s_scattering_range = sigma_s_absorbing_range  = sigma_a_absorbing_range = np.arange(min_param, max_param + 1e-13, sample_width)
-        sigma_a_scattering_range = [0.]        
-        parameters_list = []
-        for sigma_s_scattering in sigma_s_scattering_range:
-            for sigma_s_absorbing in sigma_s_absorbing_range:
-                for sigma_a_scattering in sigma_a_scattering_range:
-                    for sigma_a_absorbing in sigma_a_absorbing_range:
-                        parameters_list.append([sigma_s_scattering,
-                                                sigma_s_absorbing,
-                                                sigma_a_scattering,
-                                                sigma_a_absorbing])
-        while len(parameters_list) < self.size_world:
-            parameters_list.append([random.uniform(min_param, max_param),
-                                    random.uniform(min_param, max_param),
-                                    0.,
-                                    random.uniform(min_param, max_param)])
-            
-        self.parameters = self.comm_world.scatter(parameters_list, root=0)
+        # Choose parameters and scatter to cores.
+        self.parameters = create_and_scatter_parameters(self.comm_world)
 
         # Setup Solver
         self.t_end = 3.2
@@ -137,9 +141,6 @@ class HapodBasics:
         len_modes = len(modes)
         len_next = len(next_vectors)
         modes.scal(svals)
-
-        start = timer()
-#        logger.info('Computing gramians ...')
         gramian = np.empty((len_modes + len_next,) * 2)
         gramian[:len_modes, :len_modes] = np.diag(svals)**2
         gramian[len_modes:, len_modes:] = next_vectors.gramian()
@@ -150,9 +151,6 @@ class HapodBasics:
         gramian[:len_modes, len_modes:] = cross_gramian
         gramian[len_modes:, :len_modes] = cross_gramian.T
         del cross_gramian
-        elapsed = timer() - start
-        start = timer()
-#        logger.info('Computing eigenvalue decomposition ...')
         EVALS, EVECS = eigh(gramian, overwrite_a=True, turbo=True, eigvals=None)
         del gramian
         EVALS = EVALS[::-1]
@@ -170,21 +168,13 @@ class HapodBasics:
         svals = np.sqrt(EVALS[:first_below_err])
         EVECS = EVECS[:first_below_err]
 
-        elapsed = timer() - start
-        start = timer()
-#       with logger.block('Computing left-singular vectors ({} vectors) ...'.format(len(EVECS))):
         final_modes = modes.lincomb(EVECS / svals[:, np.newaxis])
         modes._list = None
         del modes
         del EVECS
 
-        elapsed = timer() - start
-
         if orthonormalize:
-            start = timer()
-#            with logger.block('Re-orthonormalizing POD modes ...'):
             final_modes = gram_schmidt(final_modes, copy=False)
-            elapsed = timer() - start
         
         return final_modes, svals
 
@@ -229,54 +219,55 @@ class HapodBasics:
         size = comm.Get_size()
         final_modes = modes if rank == 0 else np.empty(shape=(0, 0))
         svals = singular_values
-        total_num_snapshots = None
+        total_num_snapshots = num_snapshots_in_associated_leafs
         max_vecs_before_pod = len(final_modes) if final_modes is not None else 0
         max_local_modes = 0 
 
-        if rank == 0:
-            del modes
-            if final_modes is None:
-                final_modes, num_snapshots_in_associated_leafs = modes_creator()
-                max_vecs_before_pod = max(max_vecs_before_pod, len(final_modes))
-            total_num_snapshots = num_snapshots_in_associated_leafs
-        for current_rank in range(1, comm.Get_size()):
-            if rank == current_rank:
-                if modes is None:
-                    modes, num_snapshots_in_associated_leafs = modes_creator()
-                else:
-                    modes.scal(svals)
-                comm.send(len(modes), dest=0, tag=current_rank+1000)
-                comm.send(num_snapshots_in_associated_leafs, dest=0, tag=current_rank+2000)
-                comm.Send(modes.data, dest=0, tag=current_rank+3000)
-                modes._list = None
+        if self.size_rank_0_group > 1:
+            if rank == 0:
                 del modes
-            elif rank == 0:
-                len_modes_on_source = comm.recv(source=current_rank, tag=current_rank+1000)
-                total_num_snapshots_on_source = comm.recv(source=current_rank, tag=current_rank+2000)
-                total_num_snapshots += total_num_snapshots_on_source
-                modes_on_source = self.recv_vectorarray(comm, len_modes_on_source, source=current_rank,
-                                                        tag=current_rank+3000)
-                max_vecs_before_pod = max(max_vecs_before_pod, len(final_modes) + len_modes_on_source)
-                if svals is None:
-                    final_modes.append(modes_on_source)
-                    del modes_on_source
-                    final_modes, svals = self.pod(final_modes, total_num_snapshots)
-                    max_local_modes = max(max_local_modes, len(final_modes))
-                    if logfile is not None and self.rank_world == 0:
-                        logfile.write("In the rapod over ranks, after rank " + str(current_rank) + " there are " + str(len(final_modes)) +
-                                      " of " + str(total_num_snapshots) + " left!\n")
-                else:
-                    final_modes, svals \
-                        = self.scal_and_pod_for_rapod(final_modes, svals, modes_on_source, total_num_snapshots, 
-                                                      root_of_tree=(current_rank == size - 1 and last_rapod))
-                    max_local_modes = max(max_local_modes, len(final_modes))
-                    if logfile is not None and self.rank_world == 0:
-                        logfile.write("In the rapod over ranks, after rank " + str(current_rank) + " there are " + str(len(final_modes)) +
-                                      " of " + str(total_num_snapshots) + " left!\n")
-                    del modes_on_source
+                if final_modes is None:
+                    final_modes, num_snapshots_in_associated_leafs = modes_creator()
+                    max_vecs_before_pod = max(max_vecs_before_pod, len(final_modes))
+                total_num_snapshots = num_snapshots_in_associated_leafs
+            for current_rank in range(1, comm.Get_size()):
+                if rank == current_rank:
+                    if modes is None:
+                        modes, num_snapshots_in_associated_leafs = modes_creator()
+                    else:
+                        modes.scal(svals)
+                    comm.send(len(modes), dest=0, tag=current_rank+1000)
+                    comm.send(num_snapshots_in_associated_leafs, dest=0, tag=current_rank+2000)
+                    comm.Send(modes.data, dest=0, tag=current_rank+3000)
+                    modes._list = None
+                    del modes
+                elif rank == 0:
+                    len_modes_on_source = comm.recv(source=current_rank, tag=current_rank+1000)
+                    total_num_snapshots_on_source = comm.recv(source=current_rank, tag=current_rank+2000)
+                    total_num_snapshots += total_num_snapshots_on_source
+                    modes_on_source = self.recv_vectorarray(comm, len_modes_on_source, source=current_rank,
+                                                            tag=current_rank+3000)
+                    max_vecs_before_pod = max(max_vecs_before_pod, len(final_modes) + len_modes_on_source)
+                    if svals is None:
+                        final_modes.append(modes_on_source)
+                        del modes_on_source
+                        final_modes, svals = self.pod(final_modes, total_num_snapshots)
+                        max_local_modes = max(max_local_modes, len(final_modes))
+                        if logfile is not None and self.rank_world == 0:
+                            logfile.write("In the RAPOD over ranks, after rank " + str(current_rank) + " there are " +
+                                          str(len(final_modes)) + " of " + str(total_num_snapshots) + " left!\n")
+                    else:
+                        final_modes, svals \
+                            = self.scal_and_pod_for_rapod(final_modes, svals, modes_on_source, total_num_snapshots,
+                                                          root_of_tree=(current_rank == size - 1 and last_rapod))
+                        max_local_modes = max(max_local_modes, len(final_modes))
+                        if logfile is not None and self.rank_world == 0:
+                            logfile.write("In the RAPOD over ranks, after rank " + str(current_rank) + " there are " +
+                                          str(len(final_modes)) + " of " + str(total_num_snapshots) + " left!\n")
+                        del modes_on_source
         return final_modes, svals, total_num_snapshots, max_vecs_before_pod, max_local_modes
 
-    def shared_memory_scatter_modes(self, final_modes):
+    def shared_memory_bcast_modes(self, final_modes):
         if final_modes is None:
             final_modes = np.empty(shape=(0, 0))
         final_modes_length = self.comm_world.bcast(len(final_modes), root=0)
@@ -284,7 +275,6 @@ class HapodBasics:
         size = final_modes_length * self.vector_length
         itemsize = MPI.DOUBLE.Get_size()
         num_bytes = size * itemsize if self.rank_proc == 0 else 0
-        print(self.proc_name, self.rank_proc, num_bytes, itemsize)
         win = MPI.Win.Allocate_shared(num_bytes, itemsize, comm=self.comm_proc)
         buf, itemsize = win.Shared_query(rank=0)
         assert itemsize == MPI.DOUBLE.Get_size()
@@ -300,7 +290,6 @@ class HapodBasics:
                 self.comm_rank_0_group.Bcast(final_modes_numpy, root=0)
         final_modes = NumpyVectorArray(final_modes_numpy)
         self.comm_world.Barrier()
-#        print("first", self.rank_proc, self.rank_world, len(final_modes), final_modes.components(range(0,3))[10])
         return final_modes
 
     def calculate_total_projection_error(self, final_modes, total_num_snapshots, rank_wise=False):
@@ -332,6 +321,23 @@ class HapodBasics:
             else:
                 modes, svals = self.scal_and_pod_for_rapod(modes, svals, next_vectors, total_num_snapshots)
                 del next_vectors
-        print(chunks_done, self.num_chunks)
         assert chunks_done == int(self.num_chunks)
         return modes, svals, total_num_snapshots
+
+
+def calculate_error(filename, final_modes, total_num_snapshots, b):
+    # Test: solve problem again to calculate error
+    # broadcast final modes to rank 0 on each processor and calculate trajectory error on rank 0
+    if b.rank_world == 0 or b.rank_world == 1:
+        log_file = b.get_log_file(filename)
+    start = timer()
+    err = b.calculate_total_projection_error(final_modes, total_num_snapshots)
+    if b.rank_world == 0:
+        elapsed = timer() - start
+        log_file.write("time used for calculating error: " + str(elapsed) + "\n")
+        log_file.write("l2_mean_error is: " + str(err) + "\n")
+    if b.rank_world == 0 or b.rank_world == 1:
+        log_file.write("The maximum amount of memory used calculating the error on rank " + str(b.rank_world) +
+                       " was: " + str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2) + " GB\n")
+        log_file.close()
+    return err

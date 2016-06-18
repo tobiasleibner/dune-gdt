@@ -4,10 +4,10 @@ from timeit import default_timer as timer
 import sys
 from pymor.basic import pod
 from Hapod import HapodBasics
-from boltzmann_RAPOD_timechunk_wise_stephans_pod import calculate_error
+from Hapod import calculate_error
 
 
-def boltzmann_standard_pod(grid_size, tol, log=True, scatter_modes=True, chunk_size=10):
+def boltzmann_standard_pod(grid_size, tol, log=True, bcast_modes=True, chunk_size=10):
     b = HapodBasics(grid_size, 10, epsilon_ast=tol)
 
     filename = "standard_pod"
@@ -36,16 +36,15 @@ def boltzmann_standard_pod(grid_size, tol, log=True, scatter_modes=True, chunk_s
             elapsed = timer() - start
             log_file.write("time elapsed: " + str(elapsed) + "\n")
 
-    if scatter_modes:
-        result = b.shared_memory_scatter_modes(result)
+    if bcast_modes:
+        result = b.shared_memory_bcast_modes(result)
 
     return result, singularvalues, total_num_snapshots, b, elapsed_data_gen, elapsed_pod
 
 
 if __name__ == "__main__":
     grid_size = int(sys.argv[1])
-    chunk_size = int(sys.argv[2])
-    tol = float(sys.argv[3])
+    tol = float(sys.argv[2])
     final_modes, _, total_num_snapshots, b, _, _, _ = boltzmann_standard_pod(grid_size, tol * grid_size, chunksize=chunk_size)
     filename = "standard_pod_error"
     calculate_error(filename, final_modes, total_num_snapshots, b)
