@@ -14,7 +14,7 @@ def rapod_only_on_trajectory(grid_size, chunk_size, tol, log=True, bcast_modes=T
     b.rooted_tree_depth = b.num_chunks + 2
     max_local_modes = max_vecs_before_pod = 0
 
-    filename = "trajectory_rapod"
+    filename = "RAPOD_trajectory"
     if log and b.rank_world == 0:
         log_file = b.get_log_file(filename)
 
@@ -77,9 +77,8 @@ if __name__ == "__main__":
     final_modes, svals, total_num_snapshots, b, _, _ = rapod_only_on_trajectory(grid_size, chunk_size,
                                                                                 tol * grid_size, omega=omega,
                                                                                 calculate_max_local_modes=True)
-    filename = "trajectory_rapod_svals"
+    filename = "RAPOD_trajectory_error"
     calculate_error(filename, final_modes, total_num_snapshots, b)
-
 
 
 

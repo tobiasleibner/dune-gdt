@@ -1,6 +1,8 @@
 from boltzmann import wrapper
 from pymor.basic import *
 from mpi4py import MPI
+from itertools import izip
+from timeit import default_timer as timer
 import numpy as np
 import resource
 import sys
@@ -13,7 +15,7 @@ def create_and_scatter_parameters(comm, min_param=0., max_param=8.):
     # Samples all 3 parameters uniformly with the same width and adds random parameter combinations until
     # comm.Get_size() parameters are created. After that, parameter combinations are scattered to ranks.
     num_samples_per_parameter = int(comm.Get_size()**(1/3))
-    sample_width = max_param - min_param / (num_samples_per_parameter - 1)
+    sample_width = (max_param - min_param) / (num_samples_per_parameter - 1) if num_samples_per_parameter > 1 else 1e10
     sigma_s_scattering_range = sigma_s_absorbing_range = sigma_a_absorbing_range = np.arange(min_param,
                                                                                              max_param + 1e-13,
                                                                                              sample_width)
@@ -97,7 +99,7 @@ class HapodBasics:
                               *mu)
 
     def get_log_file(self, file_name):
-        return open(file_name + "_gridsize_%d_chunksize_%d__tol_%g_omega_%g_rank_%d"
+        return open(file_name + "_gridsize_%d_chunksize_%d_tol_%g_omega_%g_rank_%d"
                     % (self.gridsize, self.chunk_size, self.epsilon_ast, self.omega, self.rank_world), "w")
 
     def calculate_trajectory_error(self, finalmodes):
@@ -106,7 +108,7 @@ class HapodBasics:
         while not solver.finished():
             next_vectors = solver.next_n_time_steps(1, self.with_half_steps)
             next_vectors_npvecarray = NumpyVectorArray(np.zeros(shape=(len(next_vectors), self.vector_length)))
-            for vec, vec2 in zip(next_vectors_npvecarray._array, next_vectors._list):
+            for vec, vec2 in izip(next_vectors_npvecarray._array, next_vectors._list):
                 vec[:] = vec2.data[:]
             del next_vectors
             error += np.sum((next_vectors_npvecarray -
@@ -180,7 +182,7 @@ class HapodBasics:
 
     def convert_to_listvectorarray(self, numpy_array):
         listvectorarray = self.empty_vectorarray.zeros(len(numpy_array))
-        for v, vv in zip(listvectorarray._list, numpy_array):
+        for v, vv in izip(listvectorarray._list, numpy_array):
             v.data[:] = vv
         return listvectorarray
 
@@ -328,7 +330,7 @@ class HapodBasics:
 def calculate_error(filename, final_modes, total_num_snapshots, b):
     # Test: solve problem again to calculate error
     # broadcast final modes to rank 0 on each processor and calculate trajectory error on rank 0
-    if b.rank_world == 0 or b.rank_world == 1:
+    if b.rank_world == 0:
         log_file = b.get_log_file(filename)
     start = timer()
     err = b.calculate_total_projection_error(final_modes, total_num_snapshots)
@@ -336,7 +338,6 @@ def calculate_error(filename, final_modes, total_num_snapshots, b):
         elapsed = timer() - start
         log_file.write("time used for calculating error: " + str(elapsed) + "\n")
         log_file.write("l2_mean_error is: " + str(err) + "\n")
-    if b.rank_world == 0 or b.rank_world == 1:
         log_file.write("The maximum amount of memory used calculating the error on rank " + str(b.rank_world) +
                        " was: " + str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2) + " GB\n")
         log_file.close()

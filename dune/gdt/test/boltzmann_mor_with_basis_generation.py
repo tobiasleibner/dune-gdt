@@ -45,7 +45,6 @@ def calculate_mean_l2_error_for_random_samples(basis, b, seed = MPI.COMM_WORLD.G
     proj_errs = []
     if write_plot:
         for dim in range(len(basis)):
-            print('.', end=''); sys.stdout.flush()
             rrd, rrc, _ = reduce_to_subbasis(rd, dim, rc)
             U_rb = rrc.reconstruct(rrd.solve(mu))
             if mean_error:

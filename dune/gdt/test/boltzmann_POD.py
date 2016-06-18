@@ -7,7 +7,7 @@ from Hapod import HapodBasics
 from Hapod import calculate_error
 
 
-def boltzmann_standard_pod(grid_size, tol, log=True, bcast_modes=True, chunk_size=10):
+def boltzmann_standard_pod(grid_size, tol, log=True, bcast_modes=True):
     b = HapodBasics(grid_size, 10, epsilon_ast=tol)
 
     filename = "standard_pod"
@@ -45,7 +45,7 @@ def boltzmann_standard_pod(grid_size, tol, log=True, bcast_modes=True, chunk_siz
 if __name__ == "__main__":
     grid_size = int(sys.argv[1])
     tol = float(sys.argv[2])
-    final_modes, _, total_num_snapshots, b, _, _, _ = boltzmann_standard_pod(grid_size, tol * grid_size, chunksize=chunk_size)
+    final_modes, _, total_num_snapshots, b, _, _ = boltzmann_standard_pod(grid_size, tol * grid_size)
     filename = "standard_pod_error"
     calculate_error(filename, final_modes, total_num_snapshots, b)
 
