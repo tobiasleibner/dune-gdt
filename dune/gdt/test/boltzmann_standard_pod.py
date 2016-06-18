@@ -25,10 +25,9 @@ def boltzmann_standard_pod(grid_size, tol, log=True, scatter_modes=True, chunk_s
     start = timer()
     result, total_num_snapshots = b.gather_on_rank_0(b.comm_world, result, num_snapshots)
     singularvalues = None
-    timings = b.zero_timings_dict()
     elapsed_pod = 0
     if b.rank_world == 0:
-        result, singularvalues, timings = pod(result, atol=0., rtol=0., l2_mean_err=b.epsilon_ast)
+        result, singularvalues = pod(result, atol=0., rtol=0., l2_mean_err=b.epsilon_ast)
         elapsed_pod = timer() - start
         if log:
             log_file.write("After the pod, there are " + str(len(result)) + " of " + str(total_num_snapshots) + " left!\n")
@@ -40,7 +39,7 @@ def boltzmann_standard_pod(grid_size, tol, log=True, scatter_modes=True, chunk_s
     if scatter_modes:
         result = b.shared_memory_scatter_modes(result)
 
-    return result, singularvalues, total_num_snapshots, b, timings, elapsed_data_gen, elapsed_pod
+    return result, singularvalues, total_num_snapshots, b, elapsed_data_gen, elapsed_pod
 
 
 if __name__ == "__main__":

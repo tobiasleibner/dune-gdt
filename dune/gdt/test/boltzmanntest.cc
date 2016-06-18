@@ -421,7 +421,8 @@ struct VectorExporter
 
   static object buffer(Vec& self)
   {
-    PyObject* py_buf = PyBuffer_FromReadWriteMemory(&self[0], self.size() * sizeof(ScalarType));
+    PyObject* py_buf = PyMemoryView_FromMemory((char*)&self[0], self.size() * sizeof(ScalarType), PyBUF_WRITE);
+//    PyObject* py_buf = PyBuffer_FromReadWriteMemory(&self[0], self.size() * sizeof(ScalarType));
     object retval = object(handle<>(py_buf));
     return retval;
   }

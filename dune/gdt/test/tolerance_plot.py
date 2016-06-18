@@ -382,6 +382,6 @@ if b.rank_world == 0:
     data = data.T
 
     with open(filename + ".dat", 'w') as f:
-        np.savetxt(f, data, fmt=['%d','%f','%f','%f'])
+        np.savetxt(f, data, fmt=['%d','%.15g','%.15g','%.15g'])
 
     logfile.close()

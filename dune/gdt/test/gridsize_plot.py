@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 import sys
 import numpy as np
 import matplotlib as mpl
@@ -20,6 +18,10 @@ from boltzmann_rapod_only_on_trajectory import rapod_only_on_trajectory
 from modred_test import modred_pod
 from modred_in_memory import modred_pod_in_memory
 from Hapod import HapodBasics
+from matplotlib.font_manager import FontProperties
+fontP = FontProperties()
+fontP.set_size('small')
+
 
 initial_grid_size = int(sys.argv[1])
 chunk_size = int(sys.argv[2])
@@ -32,11 +34,6 @@ time_hapod_tcw = []
 l2_proj_errs_snaps_hapod_tcw = []
 l2_proj_errs_random_hapod_tcw = []
 l2_red_errs_hapod_tcw = []
-timings_1_hapod_tcw = []
-timings_2_hapod_tcw = []
-timings_3_hapod_tcw = []
-timings_4_hapod_tcw = []
-timings_5_hapod_tcw = []
 memory_hapod_tcw = []
 svals_hapod_tcw = []
 
@@ -47,11 +44,6 @@ time_rapod_traj = []
 l2_proj_errs_snaps_rapod_traj = []
 l2_proj_errs_random_rapod_traj = []
 l2_red_errs_rapod_traj = []
-timings_1_rapod_traj = []
-timings_2_rapod_traj = []
-timings_3_rapod_traj = []
-timings_4_rapod_traj = []
-timings_5_rapod_traj = []
 memory_rapod_traj = []
 svals_rapod_traj = []
 
@@ -61,11 +53,6 @@ data_gen_pod = []
 l2_proj_errs_snaps_pod = []
 l2_proj_errs_random_pod = []
 l2_red_errs_pod = []
-timings_1_pod = []
-timings_2_pod = []
-timings_3_pod = []
-timings_4_pod = []
-timings_5_pod = []
 memory_pod = []
 svals_pod = []
 
@@ -75,11 +62,6 @@ data_gen_modred = []
 l2_proj_errs_snaps_modred = []
 l2_proj_errs_random_modred = []
 l2_red_errs_modred = []
-timings_1_modred = []
-timings_2_modred = []
-timings_3_modred = []
-timings_4_modred = []
-timings_5_modred = []
 memory_modred = []
 eigvals_modred = []
 
@@ -89,27 +71,22 @@ data_gen_modred_in_mem = []
 l2_proj_errs_snaps_modred_in_mem = []
 l2_proj_errs_random_modred_in_mem = []
 l2_red_errs_modred_in_mem = []
-timings_1_modred_in_mem = []
-timings_2_modred_in_mem = []
-timings_3_modred_in_mem = []
-timings_4_modred_in_mem = []
-timings_5_modred_in_mem = []
 memory_modred_in_mem = []
 eigvals_modred_in_mem = []
 
 x_axis = []
 
 logfilename = "logfile_gridsize_plot" + str(initial_grid_size) + "_chunk_" + str(chunk_size) + "_omega_" + str(omega) + "_initial_tol_" + str(initial_tol)
-logfile = open(logfilename, "w", 0)
+logfile = open(logfilename, "w")
 
 grid_size = initial_grid_size
-for grid_size in (5, 10, 20, 40, 100): #, 60, 100, 200):
+for grid_size in (5, 10, 20):
     tol = initial_tol * grid_size
-    filename_tcw = "/scratch/tmp/l_tobi01/pickled_bases/tcw_gridsize_" + str(grid_size) + "_chunk_" + str(chunk_size) + "_omega_" + str(omega) + "_tol_" + str(tol)
-    filename_traj = "/scratch/tmp/l_tobi01/pickled_bases/traj_gridsize_" + str(grid_size) + "_chunk_" + str(chunk_size) + "_omega_" + str(omega) + "_tol_" + str(tol)
-    filename_pod = "/scratch/tmp/l_tobi01/pickled_bases/pod_gridsize_" + str(grid_size) + "_tol_" + str(tol)
-    filename_modred = "/scratch/tmp/l_tobi01/pickled_bases/modred_gridsize_" + str(grid_size) + "_tol_" + str(tol)
-    filename_modred_in_mem = "/scratch/tmp/l_tobi01/pickled_bases/modred_in_mem_gridsize_" + str(grid_size) + "_tol_" + str(tol)
+    filename_tcw = "/scratch/tmp/l_tobi01/pickled_bases/tcw_py3_gridsize_" + str(grid_size) + "_chunk_" + str(chunk_size) + "_omega_" + str(omega) + "_tol_" + str(tol)
+    filename_traj = "/scratch/tmp/l_tobi01/pickled_bases/traj_py3_gridsize_" + str(grid_size) + "_chunk_" + str(chunk_size) + "_omega_" + str(omega) + "_tol_" + str(tol)
+    filename_pod = "/scratch/tmp/l_tobi01/pickled_bases/pod_py3_gridsize_" + str(grid_size) + "_tol_" + str(tol)
+    filename_modred = "/scratch/tmp/l_tobi01/pickled_bases/modred_py3_gridsize_" + str(grid_size) + "_tol_" + str(tol)
+    filename_modred_in_mem = "/scratch/tmp/l_tobi01/pickled_bases/modred_py3_in_mem_gridsize_" + str(grid_size) + "_tol_" + str(tol)
 
     x_axis.append(grid_size)
     b = HapodBasics(grid_size, chunk_size, epsilon_ast=tol, omega=omega)
@@ -120,15 +97,14 @@ for grid_size in (5, 10, 20, 40, 100): #, 60, 100, 200):
     try:
         f = open(filename_tcw, "rb")
         if b.rank_world == 0:
-            basis, svals, total_num_snapshots, elapsed, timings, max_vecs, max_local_modes, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = pickle.load(f)
+            basis, svals, total_num_snapshots, elapsed, max_vecs, max_local_modes, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = pickle.load(f)
         else:
             basis, svals, total_num_snapshots, elapsed, max_vecs, max_local_modes, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = ([None],)*9
-            timings = b.zero_timings_dict()
         f.close()
-    except (OSError, IOError) as e:
-	start = timer()
-        basis, svals, total_num_snapshots, b, timings, max_vecs, max_local_modes = rapod_timechunk_wise(grid_size, chunk_size, tol, log=False, scatter_modes=False,
-                                                                                              calculate_max_local_modes= True, omega=omega)
+    except (FileNotFoundError, OSError, IOError) as e:
+        start = timer()
+        basis, svals, total_num_snapshots, b, max_vecs, max_local_modes = rapod_timechunk_wise(grid_size, chunk_size, tol, log=False, scatter_modes=False,
+                                                                                                        calculate_max_local_modes= True, omega=omega)
         elapsed = timer() - start
         basis = b.shared_memory_scatter_modes(basis)
         l2_proj_err_snaps = b.calculate_total_projection_error(basis, total_num_snapshots)
@@ -140,7 +116,7 @@ for grid_size in (5, 10, 20, 40, 100): #, 60, 100, 200):
         b.comm_world.Barrier()
         if b.rank_world == 0:
             f = open(filename_tcw, "wb")
-            tmp = basis, svals, total_num_snapshots, elapsed, timings, max_vecs, max_local_modes, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random
+            tmp = basis, svals, total_num_snapshots, elapsed, max_vecs, max_local_modes, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random
             pickle.dump(tmp, f)
             f.close()
     time_hapod_tcw.append(elapsed)
@@ -149,81 +125,70 @@ for grid_size in (5, 10, 20, 40, 100): #, 60, 100, 200):
     l2_proj_errs_snaps_hapod_tcw.append(l2_proj_err_snaps)
     l2_proj_errs_random_hapod_tcw.append(l2_proj_err_random)
     l2_red_errs_hapod_tcw.append(l2_red_err_random)
-    timings_1_hapod_tcw.append(timings["gramian"])
-    timings_2_hapod_tcw.append(timings["EV decomp"])
-    timings_3_hapod_tcw.append(timings["left-sing vecs"])
-    timings_4_hapod_tcw.append(timings["reorthonormalizing"])
-    timings_5_hapod_tcw.append(timings["check"])
     memory_hapod_tcw.append(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2)
     svals_hapod_tcw.append(svals)
     del basis
 
     if b.rank_world == 0:
         logfile.write("The maximum amount of memory used on rank " + str(b.rank_world) + " was: " +
-                       str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2) + " GB\n")
+                      str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2) + " GB\n")
 
     if b.rank_world == 0:
         print("rapod_tcw_done\n")
 
-    try:
-        h = open(filename_traj, "rb")
-        if b.rank_world == 0:
-            basis, svals, total_num_snapshots, elapsed, timings, max_vecs, max_local_modes, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = pickle.load(h)
-        else:
-            basis, svals, total_num_snapshots, elapsed, max_vecs, max_local_modes, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = ([None],)*9
-            timings = b.zero_timings_dict()
-        h.close()
-    except (OSError, IOError) as e:
-	start = timer()
-        basis, svals, total_num_snapshots, b, timings, max_vecs, max_local_modes = rapod_only_on_trajectory(grid_size, chunk_size, tol, log=False, scatter_modes=False,
-                                                                                                  calculate_max_local_modes=True, omega=omega)
-        elapsed = timer() - start
-        basis = b.shared_memory_scatter_modes(basis)
-        l2_proj_err_snaps = b.calculate_total_projection_error(basis, total_num_snapshots)
-        if b.rank_world == 0:
-            l2_proj_err_snaps /= grid_size
-        l2_red_err_list_random, l2_proj_err_list_random = calculate_mean_l2_error_for_random_samples(basis, b, seed=b.rank_world, write_plot=False, mean_error=False)
-        l2_proj_err_random = np.sqrt(np.sum(l2_proj_err_list_random) / total_num_snapshots)/grid_size if b.rank_world == 0 else None
-        l2_red_err_random = np.sqrt(np.sum(l2_red_err_list_random) / total_num_snapshots)/grid_size if b.rank_world == 0 else None
-        b.comm_world.Barrier()
-        if b.rank_world == 0:
-            h = open(filename_traj, "wb")
-            tmp = basis, svals, total_num_snapshots, elapsed, timings, max_vecs, max_local_modes, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random
-            pickle.dump(tmp, h)
+    if grid_size <= 100:
+        try:
+            h = open(filename_traj, "rb")
+            if b.rank_world == 0:
+                basis, svals, total_num_snapshots, elapsed, max_vecs, max_local_modes, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = pickle.load(h)
+            else:
+                basis, svals, total_num_snapshots, elapsed, max_vecs, max_local_modes, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = ([None],)*9
             h.close()
-    time_rapod_traj.append(elapsed)
-    num_modes_rapod_traj.append(len(basis))
-    max_num_local_modes_rapod_traj.append(max_local_modes)
-    l2_proj_errs_snaps_rapod_traj.append(l2_proj_err_snaps)
-    l2_proj_errs_random_rapod_traj.append(l2_proj_err_random)
-    l2_red_errs_rapod_traj.append(l2_red_err_random)
-    timings_1_rapod_traj.append(timings["gramian"])
-    timings_2_rapod_traj.append(timings["EV decomp"])
-    timings_3_rapod_traj.append(timings["left-sing vecs"])
-    timings_4_rapod_traj.append(timings["reorthonormalizing"])
-    timings_5_rapod_traj.append(timings["check"])
-    memory_rapod_traj.append(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2)
-    svals_rapod_traj.append(svals)
-    del basis
+        except (FileNotFoundError, OSError, IOError) as e:
+            start = timer()
+            basis, svals, total_num_snapshots, b, max_vecs, max_local_modes = rapod_only_on_trajectory(grid_size, chunk_size, tol, log=False, scatter_modes=False,
+                                                                                                  calculate_max_local_modes=True, omega=omega)
+            elapsed = timer() - start
+            basis = b.shared_memory_scatter_modes(basis)
+            l2_proj_err_snaps = b.calculate_total_projection_error(basis, total_num_snapshots)
+            if b.rank_world == 0:
+                l2_proj_err_snaps /= grid_size
+            l2_red_err_list_random, l2_proj_err_list_random = calculate_mean_l2_error_for_random_samples(basis, b, seed=b.rank_world, write_plot=False, mean_error=False)
+            l2_proj_err_random = np.sqrt(np.sum(l2_proj_err_list_random) / total_num_snapshots)/grid_size if b.rank_world == 0 else None
+            l2_red_err_random = np.sqrt(np.sum(l2_red_err_list_random) / total_num_snapshots)/grid_size if b.rank_world == 0 else None
+            b.comm_world.Barrier()
+            if b.rank_world == 0:
+                h = open(filename_traj, "wb")
+                tmp = basis, svals, total_num_snapshots, elapsed, max_vecs, max_local_modes, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random
+                pickle.dump(tmp, h)
+                h.close()
+        time_rapod_traj.append(elapsed)
+        num_modes_rapod_traj.append(len(basis))
+        max_num_local_modes_rapod_traj.append(max_local_modes)
+        l2_proj_errs_snaps_rapod_traj.append(l2_proj_err_snaps)
+        l2_proj_errs_random_rapod_traj.append(l2_proj_err_random)
+        l2_red_errs_rapod_traj.append(l2_red_err_random)
+        memory_rapod_traj.append(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2)
+        svals_rapod_traj.append(svals)
+        del basis
 
-    if b.rank_world == 0:
-        logfile.write("The maximum amount of memory used on rank " + str(b.rank_world) + " was: " +
-                       str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2) + " GB\n")
+        if b.rank_world == 0:
+            logfile.write("The maximum amount of memory used on rank " + str(b.rank_world) + " was: " +
+                           str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2) + " GB\n")
 
-    if b.rank_world == 0:
-        print("rapod_traj_done\n")
+        if b.rank_world == 0:
+            print("rapod_traj_done\n")
 
     if grid_size <= 40:
         try:
             g = open(filename_pod, "rb")
             if b.rank_world == 0:
-                basis, svals, total_num_snapshots, elapsed_data_gen, elapsed_pod, timings, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = pickle.load(g)
+                basis, svals, total_num_snapshots, elapsed_data_gen, elapsed_pod, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = pickle.load(g)
             else:
                 basis, svals, total_num_snapshots, elapsed_data_gen, elapsed_pod, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = ([None],)*8
-                timings = b.zero_timings_dict()
             g.close()
-        except (OSError, IOError) as e:
-            basis, svals, total_num_snapshots, b, timings, elapsed_data_gen, elapsed_pod = boltzmann_standard_pod(grid_size, tol, log=False, scatter_modes=False)
+        except (FileNotFoundError, OSError, IOError) as e:
+            basis, svals, total_num_snapshots, b, elapsed_data_gen, elapsed_pod = boltzmann_standard_pod(grid_size, tol, log=False, scatter_modes=False)
             basis = b.shared_memory_scatter_modes(basis)
             l2_proj_err_snaps = b.calculate_total_projection_error(basis, total_num_snapshots)
             if b.rank_world == 0:
@@ -234,7 +199,7 @@ for grid_size in (5, 10, 20, 40, 100): #, 60, 100, 200):
             b.comm_world.Barrier()
             if b.rank_world == 0:
                 g = open(filename_pod, "wb")
-                tmp = basis, svals, total_num_snapshots, elapsed_data_gen, elapsed_pod, timings, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random
+                tmp = basis, svals, total_num_snapshots, elapsed_data_gen, elapsed_pod, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random
                 pickle.dump(tmp, g)
                 g.close()
         time_pod.append(elapsed_data_gen + elapsed_pod)
@@ -243,11 +208,6 @@ for grid_size in (5, 10, 20, 40, 100): #, 60, 100, 200):
         l2_proj_errs_snaps_pod.append(l2_proj_err_snaps)
         l2_proj_errs_random_pod.append(l2_proj_err_random)
         l2_red_errs_pod.append(l2_red_err_random)
-        timings_1_pod.append(timings["gramian"])
-        timings_2_pod.append(timings["EV decomp"])
-        timings_3_pod.append(timings["left-sing vecs"])
-        timings_4_pod.append(timings["reorthonormalizing"])
-        timings_5_pod.append(timings["check"])
         memory_pod.append(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2)
         svals_pod.append(svals)
         del basis
@@ -264,43 +224,38 @@ for grid_size in (5, 10, 20, 40, 100): #, 60, 100, 200):
     else:
         num_modes_hapod_tcw = b.comm_world.bcast(num_modes_hapod_tcw, root=0)
 
-    try:
-        f = open(filename_modred, "rb")
-        if b.rank_world == 0:
-            basis, eigvals, total_num_snapshots, elapsed_data_gen, elapsed_pod, timings, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = pickle.load(f)
-        else:
-            basis, eigvals, total_num_snapshots, elapsed_data_gen, elapsed_pod, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = ([None],)*8
-            timings = b.zero_timings_dict()
-        f.close()
-    except (OSError, IOError) as e:
-        basis, eigvals, total_num_snapshots, b, timings, elapsed_data_gen, elapsed_pod = modred_pod(grid_size, chunk_size, num_modes_pod[-1] if grid_size <= 40 else num_modes_hapod_tcw[-1], log=False, scatter_modes=False)
-        basis = b.shared_memory_scatter_modes(basis)
-        l2_proj_err_snaps = b.calculate_total_projection_error(basis, total_num_snapshots)
-        if b.rank_world == 0:
-            l2_proj_err_snaps /= grid_size
-        l2_red_err_list_random, l2_proj_err_list_random = calculate_mean_l2_error_for_random_samples(basis, b, seed=b.rank_world, write_plot=False, mean_error=False)
-        l2_proj_err_random = np.sqrt(np.sum(l2_proj_err_list_random) / total_num_snapshots)/grid_size if b.rank_world == 0 else None
-        l2_red_err_random = np.sqrt(np.sum(l2_red_err_list_random) / total_num_snapshots)/grid_size if b.rank_world == 0 else None
-        b.comm_world.Barrier()
-        if b.rank_world == 0:
-            f = open(filename_modred, "wb")
-            tmp = basis, eigvals, total_num_snapshots, elapsed_data_gen, elapsed_pod, timings, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random
-            pickle.dump(tmp, f)
+    if grid_size <= 40:
+        try:
+            f = open(filename_modred, "rb")
+            if b.rank_world == 0:
+                basis, eigvals, total_num_snapshots, elapsed_data_gen, elapsed_pod, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = pickle.load(f)
+            else:
+                basis, eigvals, total_num_snapshots, elapsed_data_gen, elapsed_pod, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = ([None],)*8
             f.close()
-    time_modred.append(elapsed_data_gen + elapsed_pod)
-    data_gen_modred.append(elapsed_data_gen)
-    num_modes_modred.append(len(basis))
-    l2_proj_errs_snaps_modred.append(l2_proj_err_snaps)
-    l2_proj_errs_random_modred.append(l2_proj_err_random)
-    l2_red_errs_modred.append(l2_red_err_random)
-    timings_1_modred.append(timings["gramian"])
-    timings_2_modred.append(timings["EV decomp"])
-    timings_3_modred.append(timings["left-sing vecs"])
-    timings_4_modred.append(timings["reorthonormalizing"])
-    timings_5_modred.append(timings["check"])
-    memory_modred.append(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2)
-    eigvals_modred.append(eigvals)
-    del basis
+        except (FileNotFoundError, OSError, IOError) as e:
+            basis, eigvals, total_num_snapshots, b, elapsed_data_gen, elapsed_pod = modred_pod(grid_size, chunk_size, num_modes_pod[-1] if grid_size <= 40 else num_modes_hapod_tcw[-1], log=False, scatter_modes=False)
+            basis = b.shared_memory_scatter_modes(basis)
+            l2_proj_err_snaps = b.calculate_total_projection_error(basis, total_num_snapshots)
+            if b.rank_world == 0:
+                l2_proj_err_snaps /= grid_size
+            l2_red_err_list_random, l2_proj_err_list_random = calculate_mean_l2_error_for_random_samples(basis, b, seed=b.rank_world, write_plot=False, mean_error=False)
+            l2_proj_err_random = np.sqrt(np.sum(l2_proj_err_list_random) / total_num_snapshots)/grid_size if b.rank_world == 0 else None
+            l2_red_err_random = np.sqrt(np.sum(l2_red_err_list_random) / total_num_snapshots)/grid_size if b.rank_world == 0 else None
+            b.comm_world.Barrier()
+            if b.rank_world == 0:
+                f = open(filename_modred, "wb")
+                tmp = basis, eigvals, total_num_snapshots, elapsed_data_gen, elapsed_pod, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random
+                pickle.dump(tmp, f)
+                f.close()
+        time_modred.append(elapsed_data_gen + elapsed_pod)
+        data_gen_modred.append(elapsed_data_gen)
+        num_modes_modred.append(len(basis))
+        l2_proj_errs_snaps_modred.append(l2_proj_err_snaps)
+        l2_proj_errs_random_modred.append(l2_proj_err_random)
+        l2_red_errs_modred.append(l2_red_err_random)
+        memory_modred.append(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2)
+        eigvals_modred.append(eigvals)
+        del basis
 
     if b.rank_world == 0:
         logfile.write("The maximum amount of memory used on rank " + str(b.rank_world) + " was: " +
@@ -314,13 +269,12 @@ for grid_size in (5, 10, 20, 40, 100): #, 60, 100, 200):
         try:
             f = open(filename_modred_in_mem, "rb")
             if b.rank_world == 0:
-                basis, eigvals, total_num_snapshots, elapsed_data_gen, elapsed_pod, timings, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = pickle.load(f)
+                basis, eigvals, total_num_snapshots, elapsed_data_gen, elapsed_pod, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = pickle.load(f)
             else:
                 basis, eigvals, total_num_snapshots, elapsed_data_gen, elapsed_pod, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = ([None],)*8
-                timings = b.zero_timings_dict()
             f.close()
-        except (OSError, IOError) as e:
-            basis, eigvals, total_num_snapshots, b, timings, elapsed_data_gen, elapsed_pod = modred_pod_in_memory(grid_size, chunk_size, num_modes_pod[-1], log=False, scatter_modes=False)
+        except (FileNotFoundError, OSError, IOError) as e:
+            basis, eigvals, total_num_snapshots, b, elapsed_data_gen, elapsed_pod = modred_pod_in_memory(grid_size, chunk_size, num_modes_pod[-1], log=False, scatter_modes=False)
             basis = b.shared_memory_scatter_modes(basis)
             l2_proj_err_snaps = b.calculate_total_projection_error(basis, total_num_snapshots)
             if b.rank_world == 0:
@@ -331,7 +285,7 @@ for grid_size in (5, 10, 20, 40, 100): #, 60, 100, 200):
             b.comm_world.Barrier()
             if b.rank_world == 0:
                 f = open(filename_modred_in_mem, "wb")
-                tmp = basis, eigvals, total_num_snapshots, elapsed_data_gen, elapsed_pod, timings, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random
+                tmp = basis, eigvals, total_num_snapshots, elapsed_data_gen, elapsed_pod, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random
                 pickle.dump(tmp, f)
                 f.close()
         time_modred_in_mem.append(elapsed_pod)
@@ -340,11 +294,6 @@ for grid_size in (5, 10, 20, 40, 100): #, 60, 100, 200):
         l2_proj_errs_snaps_modred_in_mem.append(l2_proj_err_snaps)
         l2_proj_errs_random_modred_in_mem.append(l2_proj_err_random)
         l2_red_errs_modred_in_mem.append(l2_red_err_random)
-        timings_1_modred_in_mem.append(timings["gramian"])
-        timings_2_modred_in_mem.append(timings["EV decomp"])
-        timings_3_modred_in_mem.append(timings["left-sing vecs"])
-        timings_4_modred_in_mem.append(timings["reorthonormalizing"])
-        timings_5_modred_in_mem.append(timings["check"])
         memory_modred_in_mem.append(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2)
         eigvals_modred_in_mem.append(eigvals)
         del basis
@@ -354,15 +303,13 @@ for grid_size in (5, 10, 20, 40, 100): #, 60, 100, 200):
                            str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2) + " GB\n")
 
 
-from matplotlib.font_manager import FontProperties
-fontP = FontProperties()
-fontP.set_size('small')
-
 if b.rank_world == 0:
     plt.figure()
 
     if len(num_modes_pod) < len(num_modes_hapod_tcw):
-        num_modes_pod.extend([0] * (len(num_modes_hapod_tcw) - len(num_modes_pod)))
+        num_modes_pod.extend([0.] * (len(num_modes_hapod_tcw) - len(num_modes_pod)))
+    if len(num_modes_modred) < len(num_modes_hapod_tcw):
+        num_modes_modred.extend([0.] * (len(num_modes_hapod_tcw) - len(num_modes_modred)))
 
     plt.plot(x_axis, num_modes_hapod_tcw, label="tcw")
     plt.plot(x_axis, num_modes_rapod_traj, label="traj")
@@ -383,15 +330,19 @@ if b.rank_world == 0:
     data = data.T
 
     with open(filename + ".dat", 'w') as f:
-        np.savetxt(f, data, fmt=['%f','%f','%f','%f','%f','%f'])
+        np.savetxt(f, data, fmt=['%d','%d','%d','%d','%d','%d'])
 
 
     plt.figure()
 
     if len(num_modes_pod) < len(num_modes_hapod_tcw):
-        l2_proj_errs_snaps_pod.extend([0] * (len(num_modes_hapod_tcw) - len(num_modes_pod)))
-        l2_proj_errs_random_pod.extend([0] * (len(num_modes_hapod_tcw) - len(num_modes_pod)))
-        l2_red_errs_pod.extend([0] * (len(num_modes_hapod_tcw) - len(num_modes_pod)))
+        l2_proj_errs_snaps_pod.extend([0.] * (len(num_modes_hapod_tcw) - len(num_modes_pod)))
+        l2_proj_errs_random_pod.extend([0.] * (len(num_modes_hapod_tcw) - len(num_modes_pod)))
+        l2_red_errs_pod.extend([0.] * (len(num_modes_hapod_tcw) - len(num_modes_pod)))
+    if len(num_modes_modred) < len(num_modes_hapod_tcw):
+        l2_proj_errs_snaps_modred.extend([0.] * (len(num_modes_hapod_tcw) - len(num_modes_modred)))
+        l2_proj_errs_random_modred.extend([0.] * (len(num_modes_hapod_tcw) - len(num_modes_modred)))
+        l2_red_errs_modred.extend([0.] * (len(num_modes_hapod_tcw) - len(num_modes_modred)))
 
     plt.semilogy(x_axis, l2_proj_errs_snaps_hapod_tcw, label="proj_snaps_tcw")
     plt.semilogy(x_axis, l2_proj_errs_random_hapod_tcw, label="proj_random_tcw")
@@ -425,15 +376,17 @@ if b.rank_world == 0:
     data = data.T
 
     with open(filename + ".dat", 'w') as f:
-        np.savetxt(f, data, fmt=['%f', '%f', '%f', '%f', '%f', '%f', '%f', '%f', '%f', '%f', '%f', '%f', '%f'])
+        np.savetxt(f, data, fmt=['%d', '%f', '%f', '%f', '%f', '%f', '%f', '%f', '%f', '%f', '%f', '%f', '%f'])
 
 
     plt.figure()
 
     if len(num_modes_pod) < len(num_modes_hapod_tcw):
-        time_pod.extend([0] * (len(num_modes_hapod_tcw) - len(num_modes_pod)))
+        time_pod.extend([0.] * (len(num_modes_hapod_tcw) - len(num_modes_pod)))
     if len(time_modred_in_mem) < len(time_hapod_tcw):
-        time_modred_in_mem.extend([0] * (len(time_hapod_tcw) - len(time_modred_in_mem)))
+        time_modred_in_mem.extend([0.] * (len(time_hapod_tcw) - len(time_modred_in_mem)))
+    if len(time_modred) < len(time_hapod_tcw):
+        time_modred.extend([0.] * (len(time_hapod_tcw) - len(time_modred)))
 
     plt.plot(x_axis, time_hapod_tcw, label="tcw")
     plt.plot(x_axis, time_rapod_traj, label="traj")
@@ -454,14 +407,16 @@ if b.rank_world == 0:
     data = data.T
 
     with open(filename + ".dat", 'w') as f:
-        np.savetxt(f, data, fmt=['%f','%f','%f','%f','%f','%f'])
+        np.savetxt(f, data, fmt=['%d','%f','%f','%f','%f','%f'])
 
     plt.figure()
 
     if len(num_modes_pod) < len(num_modes_hapod_tcw):
-        data_gen_pod.extend([0] * (len(num_modes_hapod_tcw) - len(num_modes_pod)))
+        data_gen_pod.extend([0.] * (len(num_modes_hapod_tcw) - len(num_modes_pod)))
     if len(time_modred_in_mem) < len(time_hapod_tcw):
-        data_gen_modred_in_mem.extend([0] * (len(time_hapod_tcw) - len(time_modred_in_mem)))
+        data_gen_modred_in_mem.extend([0.] * (len(time_hapod_tcw) - len(time_modred_in_mem)))
+    if len(time_modred) < len(time_hapod_tcw):
+        data_gen_modred.extend([0.] * (len(time_hapod_tcw) - len(time_modred)))
 
     plt.plot(x_axis, data_gen_pod, label="pod")
     plt.plot(x_axis, data_gen_modred, label="modred")
@@ -480,7 +435,7 @@ if b.rank_world == 0:
     data = data.T
 
     with open(filename + ".dat", 'w') as f:
-        np.savetxt(f, data, fmt=['%f','%f','%f','%f'])
+        np.savetxt(f, data, fmt=['%d','%f','%f','%f'])
 
     plt.figure()
 

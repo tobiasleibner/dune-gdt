@@ -6,7 +6,7 @@ import resource
 from timeit import default_timer as timer
 import sys
 import math
-from itertools import izip
+import random
 from scipy.linalg import eigh
 
 
@@ -19,18 +19,22 @@ class HapodBasics:
         # create world communicator
         self.comm_world = MPI.COMM_WORLD
         self.rank_world = self.comm_world.Get_rank()
+        self.size_world = self.comm_world.Get_size()
 
         # gather processor names and assign each processor name a unique positive number
         proc_name = MPI.Get_processor_name()
+        self.proc_name = proc_name
         proc_names = self.comm_world.allgather(proc_name)
-        proc_numbers = dict.fromkeys(set(proc_names), 0)
-        for i, proc_key in enumerate(proc_numbers):
+        proc_names = sorted(set(proc_names))
+        proc_numbers = dict()
+        for i, proc_key in enumerate(proc_names):
             proc_numbers[proc_key] = i
 
         # use processor numbers to create a communicator on each processor
         self.comm_proc = MPI.Intracomm.Split(self.comm_world, proc_numbers[proc_name], self.rank_world)
         self.size_proc = self.comm_proc.Get_size()
         self.rank_proc = self.comm_proc.Get_rank()
+        #print(self.proc_name, self.rank_proc, proc_numbers[proc_name])
 
         # create communicator containing rank 0 processes on each processor
         self.contained_in_rank_0_group = 1 if self.rank_proc == 0 else 0
@@ -40,10 +44,12 @@ class HapodBasics:
 
         # Preparation: Parameter selection
         # Choose parameters and scatter to cores
-        sigma_s_scattering_range = range(0, 9, 2)
-        sigma_s_absorbing_range = range(0, 9, 2)
-        sigma_a_scattering_range = range(0, 11, 11)
-        sigma_a_absorbing_range = range(0, 9, 2)
+        min_param = 0.
+        max_param = 8.
+        num_samples_per_parameter = int(self.size_world**(1/3))
+        sample_width = max_param - min_param / (num_samples_per_parameter - 1)
+        sigma_s_scattering_range = sigma_s_absorbing_range  = sigma_a_absorbing_range = np.arange(min_param, max_param + 1e-13, sample_width)
+        sigma_a_scattering_range = [0.]        
         parameters_list = []
         for sigma_s_scattering in sigma_s_scattering_range:
             for sigma_s_absorbing in sigma_s_absorbing_range:
@@ -53,6 +59,12 @@ class HapodBasics:
                                                 sigma_s_absorbing,
                                                 sigma_a_scattering,
                                                 sigma_a_absorbing])
+        while len(parameters_list) < self.size_world:
+            parameters_list.append([random.uniform(min_param, max_param),
+                                    random.uniform(min_param, max_param),
+                                    0.,
+                                    random.uniform(min_param, max_param)])
+            
         self.parameters = self.comm_world.scatter(parameters_list, root=0)
 
         # Setup Solver
@@ -64,9 +76,9 @@ class HapodBasics:
         if self.with_half_steps:
             self.num_time_steps += self.num_time_steps - 1
         self.num_chunks = math.ceil(self.num_time_steps / chunk_size)
-        self.last_chunk_size = self.num_time_steps - chunk_size*(self.num_chunks-1.)
+        self.last_chunk_size = self.num_time_steps - chunk_size * (self.num_chunks - 1.)
         assert self.num_chunks >= 2
-        assert self.last_chunk_size >= 1 and self.last_chunk_size <= self.chunk_size
+        assert 1 <= self.last_chunk_size <= self.chunk_size
         self.epsilon_ast = epsilon_ast
         self.omega = omega
         self.rooted_tree_depth = None
@@ -81,8 +93,8 @@ class HapodBasics:
                               *mu)
 
     def get_log_file(self, file_name):
-        return open(file_name + "_gridsize_" + str(self.gridsize) + "_chunksize_" + str(self.chunk_size) + "_" +
-                    str(self.with_half_steps) + "_tol_" + str(self.epsilon_ast) + "_omega_" + str(self.omega) + "_rank_" + str(self.rank_world), "w", 0)
+        return open(file_name + "_gridsize_%d_chunksize_%d__tol_%g_omega_%g_rank_%d"
+                    % (self.gridsize, self.chunk_size, self.epsilon_ast, self.omega, self.rank_world), "w")
 
     def calculate_trajectory_error(self, finalmodes):
         error = 0
@@ -90,7 +102,7 @@ class HapodBasics:
         while not solver.finished():
             next_vectors = solver.next_n_time_steps(1, self.with_half_steps)
             next_vectors_npvecarray = NumpyVectorArray(np.zeros(shape=(len(next_vectors), self.vector_length)))
-            for vec, vec2 in izip(next_vectors_npvecarray._array, next_vectors._list):
+            for vec, vec2 in zip(next_vectors_npvecarray._array, next_vectors._list):
                 vec[:] = vec2.data[:]
             del next_vectors
             error += np.sum((next_vectors_npvecarray -
@@ -110,23 +122,21 @@ class HapodBasics:
         else:
             epsilon_alpha = self.epsilon_ast * (1. - self.omega) * \
                             np.sqrt(num_snapshots_in_associated_leafs) / np.sqrt(len(vectorarray))
-        return pod(vectorarray, atol=0., rtol=0., l2_mean_err=epsilon_alpha)
+        return pod(vectorarray, atol=0., rtol=0., l2_mean_err=epsilon_alpha, orthonormalize=False, check=False)
 
     def pod_and_scal(self, vectorarray, num_snapshots_in_associated_leafs, root_of_tree=False):
-        modes, svals, timings = self.pod(vectorarray, num_snapshots_in_associated_leafs, root_of_tree=root_of_tree)
+        modes, svals = self.pod(vectorarray, num_snapshots_in_associated_leafs, root_of_tree=root_of_tree)
         vectorarray._list = None
         del vectorarray
         if not root_of_tree:
             modes.scal(svals)
-        return modes, timings
+        return modes
 
-    def scal_and_pod_for_rapod(self, modes, svals, next_vectors, num_snapshots_in_associated_leafs, root_of_tree=False, orthonormalize=True):
-	len_modes = len(modes)
-	len_next = len(next_vectors)
-	
+    def scal_and_pod_for_rapod(self, modes, svals, next_vectors, num_snapshots_in_associated_leafs, root_of_tree=False, 
+                               orthonormalize=True):
+        len_modes = len(modes)
+        len_next = len(next_vectors)
         modes.scal(svals)
-
-        timings = dict()
 
         start = timer()
 #        logger.info('Computing gramians ...')
@@ -141,7 +151,6 @@ class HapodBasics:
         gramian[len_modes:, :len_modes] = cross_gramian.T
         del cross_gramian
         elapsed = timer() - start
-        timings["gramian"] = elapsed
         start = timer()
 #        logger.info('Computing eigenvalue decomposition ...')
         EVALS, EVECS = eigh(gramian, overwrite_a=True, turbo=True, eigvals=None)
@@ -151,46 +160,42 @@ class HapodBasics:
 
         errs = np.concatenate((np.cumsum(EVALS[::-1])[::-1], [0.]))
 
-	epsilon_alpha = np.sqrt(num_snapshots_in_associated_leafs) / np.sqrt(len_modes + len_next) * self.epsilon_ast
+        epsilon_alpha = np.sqrt(num_snapshots_in_associated_leafs) / np.sqrt(len_modes + len_next) * self.epsilon_ast
         if not root_of_tree:
-            epsilon_alpha = epsilon_alpha * self.omega / np.sqrt(self.rooted_tree_depth - 1)
+            epsilon_alpha *= self.omega / np.sqrt(self.rooted_tree_depth - 1)
         else:
-            epsilon_alpha = epsilon_alpha * (1 - self.omega)
+            epsilon_alpha *= (1 - self.omega)
         below_err = np.where(errs <= epsilon_alpha**2 * (len_modes + len_next))[0]
         first_below_err = below_err[0]
         svals = np.sqrt(EVALS[:first_below_err])
         EVECS = EVECS[:first_below_err]
 
         elapsed = timer() - start
-        timings["EV decomp"] = elapsed
         start = timer()
- #       with logger.block('Computing left-singular vectors ({} vectors) ...'.format(len(EVECS))):
+#       with logger.block('Computing left-singular vectors ({} vectors) ...'.format(len(EVECS))):
         final_modes = modes.lincomb(EVECS / svals[:, np.newaxis])
         modes._list = None
         del modes
         del EVECS
 
         elapsed = timer() - start
-        timings["left-sing vecs"] = elapsed
 
         if orthonormalize:
             start = timer()
 #            with logger.block('Re-orthonormalizing POD modes ...'):
             final_modes = gram_schmidt(final_modes, copy=False)
             elapsed = timer() - start
-            timings["reorthonormalizing"] = elapsed
-
-        timings["check"] = 0.
         
-        return final_modes, svals, timings
+        return final_modes, svals
 
     def convert_to_listvectorarray(self, numpy_array):
         listvectorarray = self.empty_vectorarray.zeros(len(numpy_array))
-        for v, vv in izip(listvectorarray._list, numpy_array):
+        for v, vv in zip(listvectorarray._list, numpy_array):
             v.data[:] = vv
         return listvectorarray
 
-    def gather_on_rank_0(self, comm, vectorarray, num_snapshots_on_rank, uniform_num_modes=True, return_displacements=False):
+    def gather_on_rank_0(self, comm, vectorarray, num_snapshots_on_rank, uniform_num_modes=True, 
+                         return_displacements=False):
         rank = comm.Get_rank()
         num_snapshots_in_associated_leafs = comm.reduce(num_snapshots_on_rank, op=MPI.SUM, root=0)
         total_num_modes = comm.reduce(len(vectorarray), op=MPI.SUM, root=0)
@@ -218,11 +223,8 @@ class HapodBasics:
         else:
             return vectors_gathered, num_snapshots_in_associated_leafs
 
-    def zero_timings_dict(self):
-        return {"gramian" : 0., "EV decomp": 0., "left-sing vecs": 0., "reorthonormalizing": 0., "check": 0.}
-
-    def rapod_over_ranks(self, comm, modes=None, singular_values=None, num_snapshots_in_associated_leafs=None, last_rapod=False,
-                         modes_creator=None):
+    def rapod_over_ranks(self, comm, modes=None, singular_values=None, num_snapshots_in_associated_leafs=None, 
+                         last_rapod=False, modes_creator=None, logfile=None):
         rank = comm.Get_rank()
         size = comm.Get_size()
         final_modes = modes if rank == 0 else np.empty(shape=(0, 0))
@@ -237,7 +239,6 @@ class HapodBasics:
                 final_modes, num_snapshots_in_associated_leafs = modes_creator()
                 max_vecs_before_pod = max(max_vecs_before_pod, len(final_modes))
             total_num_snapshots = num_snapshots_in_associated_leafs
-        timings_total = self.zero_timings_dict()
         for current_rank in range(1, comm.Get_size()):
             if rank == current_rank:
                 if modes is None:
@@ -256,28 +257,34 @@ class HapodBasics:
                 modes_on_source = self.recv_vectorarray(comm, len_modes_on_source, source=current_rank,
                                                         tag=current_rank+3000)
                 max_vecs_before_pod = max(max_vecs_before_pod, len(final_modes) + len_modes_on_source)
-		if svals is None:
+                if svals is None:
                     final_modes.append(modes_on_source)
                     del modes_on_source
-                    final_modes, svals, timings = self.pod(final_modes, total_num_snapshots)
+                    final_modes, svals = self.pod(final_modes, total_num_snapshots)
                     max_local_modes = max(max_local_modes, len(final_modes))
+                    if logfile is not None and self.rank_world == 0:
+                        logfile.write("In the rapod over ranks, after rank " + str(current_rank) + " there are " + str(len(final_modes)) +
+                                      " of " + str(total_num_snapshots) + " left!\n")
                 else:
-                    final_modes, svals, timings = self.scal_and_pod_for_rapod(final_modes, svals, modes_on_source, total_num_snapshots,
-                                                          root_of_tree=(current_rank == size - 1 and last_rapod))
+                    final_modes, svals \
+                        = self.scal_and_pod_for_rapod(final_modes, svals, modes_on_source, total_num_snapshots, 
+                                                      root_of_tree=(current_rank == size - 1 and last_rapod))
                     max_local_modes = max(max_local_modes, len(final_modes))
+                    if logfile is not None and self.rank_world == 0:
+                        logfile.write("In the rapod over ranks, after rank " + str(current_rank) + " there are " + str(len(final_modes)) +
+                                      " of " + str(total_num_snapshots) + " left!\n")
                     del modes_on_source
-                for key in timings:
-                    timings_total[key] += timings[key]
-        return final_modes, svals, total_num_snapshots, timings_total, max_vecs_before_pod, max_local_modes
+        return final_modes, svals, total_num_snapshots, max_vecs_before_pod, max_local_modes
 
     def shared_memory_scatter_modes(self, final_modes):
         if final_modes is None:
             final_modes = np.empty(shape=(0, 0))
         final_modes_length = self.comm_world.bcast(len(final_modes), root=0)
         # create shared memory buffer to share final modes between processes on each node
-        size = final_modes_length*self.vector_length
+        size = final_modes_length * self.vector_length
         itemsize = MPI.DOUBLE.Get_size()
         num_bytes = size * itemsize if self.rank_proc == 0 else 0
+        print(self.proc_name, self.rank_proc, num_bytes, itemsize)
         win = MPI.Win.Allocate_shared(num_bytes, itemsize, comm=self.comm_proc)
         buf, itemsize = win.Shared_query(rank=0)
         assert itemsize == MPI.DOUBLE.Get_size()
@@ -297,7 +304,7 @@ class HapodBasics:
         return final_modes
 
     def calculate_total_projection_error(self, final_modes, total_num_snapshots, rank_wise=False):
-        if rank_wise: # calculate trajectory only on one rank per node at once to save memory
+        if rank_wise:  # calculate trajectory only on one rank per node at once to save memory
             for current_rank in range(0, self.size_proc):
                 if self.rank_proc == current_rank:
                     trajectory_error = self.calculate_trajectory_error(final_modes)
@@ -321,10 +328,10 @@ class HapodBasics:
             if svals is None:
                 modes.append(next_vectors)
                 del next_vectors
-                modes, svals, timings = self.pod(modes, total_num_snapshots)
+                modes, svals = self.pod(modes, total_num_snapshots)
             else:
-                modes, svals, timings = self.scal_and_pod_for_rapod(modes, svals, next_vectors, total_num_snapshots)
+                modes, svals = self.scal_and_pod_for_rapod(modes, svals, next_vectors, total_num_snapshots)
                 del next_vectors
         print(chunks_done, self.num_chunks)
         assert chunks_done == int(self.num_chunks)
-        return modes, svals, total_num_snapshots, timings
+        return modes, svals, total_num_snapshots

@@ -17,10 +17,9 @@ def rapod_only_on_trajectory(grid_size, chunk_size, tol, log=True, scatter_modes
     if log and b.rank_world == 0:
         log_file = b.get_log_file(filename)
 
-    total_timings = b.zero_timings_dict()
 
     # calculate Boltzmann problem trajectory
-    modes, svals, total_num_snapshots, timings = b.rapod_on_trajectory()
+    modes, svals, total_num_snapshots = b.rapod_on_trajectory()
     if log and b.rank_world == 0:
         log_file.write("After the rapod, there are " + str(len(modes)) + " of " + str(total_num_snapshots) + " left!\n")
     modes.scal(svals)
@@ -30,12 +29,10 @@ def rapod_only_on_trajectory(grid_size, chunk_size, tol, log=True, scatter_modes
         
     if b.rank_proc == 0:
         max_vecs_before_pod = max(max_vecs_before_pod, len(modes))
-        modes, timings = b.pod_and_scal(modes, total_num_snapshots)
+        modes = b.pod_and_scal(modes, total_num_snapshots)
         max_local_modes = max(max_local_modes, len(modes))
         if log and b.rank_world == 0:
             log_file.write("After the rapod, there are " + str(len(modes)) + " of " + str(total_num_snapshots) + " left!\n")
-        for key in timings:
-            total_timings[key] += timings[key]
 
     # gather snapshots on rank 0 of world
     if b.rank_proc == 0:
@@ -43,10 +40,8 @@ def rapod_only_on_trajectory(grid_size, chunk_size, tol, log=True, scatter_modes
         svals = None
         if b.rank_world == 0:
             max_vecs_before_pod = max(max_vecs_before_pod, len(modes))
-            modes, svals, timings = b.pod(modes, total_num_snapshots, root_of_tree=True)
+            modes, svals = b.pod(modes, total_num_snapshots, root_of_tree=True)
             max_local_modes = max(max_local_modes, len(modes))
-            for key in timings:
-                total_timings[key] += timings[key]
             if log:
                 log_file.write("After the pod, there are " + str(len(modes)) + " of " + str(total_num_snapshots) + " left!\n")
                 log_file.write("The maximum amount of memory used on rank 0 was: " +
@@ -67,7 +62,7 @@ def rapod_only_on_trajectory(grid_size, chunk_size, tol, log=True, scatter_modes
     if scatter_modes:
         modes = b.shared_memory_scatter_modes(modes)
 
-    return modes, svals, total_num_snapshots, b, total_timings, max_vecs_before_pod, max_local_modes
+    return modes, svals, total_num_snapshots, b, max_vecs_before_pod, max_local_modes
 
 
 if __name__ == "__main__":
