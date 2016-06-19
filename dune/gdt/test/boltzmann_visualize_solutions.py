@@ -1,6 +1,7 @@
 from boltzmann import wrapper
 from mpi4py import MPI
 from Hapod import create_and_scatter_parameters
+import sys
 
 
 def visualize_solutions(grid_size=50):
