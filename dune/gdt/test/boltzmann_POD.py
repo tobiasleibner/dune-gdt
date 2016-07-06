@@ -30,11 +30,11 @@ def boltzmann_standard_pod(grid_size, tol, log=True, bcast_modes=True):
         result, singularvalues = pod(result, atol=0., rtol=0., l2_mean_err=b.epsilon_ast)
         elapsed_pod = timer() - start
         if log:
-            log_file.write("After the pod, there are " + str(len(result)) + " of " + str(total_num_snapshots) + " left!\n")
+            log_file.write("After the POD, there are " + str(len(result)) + " modes of " + str(total_num_snapshots) + " snapshots left!\n")
             log_file.write("The maximum amount of memory used on rank 0 was: " +
                            str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2) + " GB\n")
             elapsed = timer() - start
-            log_file.write("time elapsed: " + str(elapsed) + "\n")
+            log_file.write("Time elapsed: " + str(elapsed) + "\n")
 
     if bcast_modes:
         result = b.shared_memory_bcast_modes(result)
@@ -46,8 +46,18 @@ if __name__ == "__main__":
     grid_size = int(sys.argv[1])
     tol = float(sys.argv[2])
     final_modes, _, total_num_snapshots, b, _, _ = boltzmann_standard_pod(grid_size, tol * grid_size)
-    filename = "standard_pod_error"
-    calculate_error(filename, final_modes, total_num_snapshots, b)
+    filename = "standard_pod"
+    filename_errors = "standard_pod_error"  
+    calculate_error(filename_errors, final_modes, total_num_snapshots, b, grid_size)
+    b.comm_world.Barrier()
+    if b.rank_world == 0:
+        log_file = b.get_log_file(filename, "r")
+        log_file_errors = b.get_log_file(filename_errors, "r")
+        print("\n\n\nResults:\n")
+        print(log_file.read())
+        print(log_file_errors.read())
+        log_file.close()
+        log_file_errors.close()
 
 
 

@@ -6,7 +6,7 @@ from Hapod import HapodBasics
 from Hapod import calculate_error
 
 
-def rapod_timechunk_wise(grid_size, chunk_size, tol, log=True, scatter_modes=True, omega=0.5,
+def hapod_timechunk_wise(grid_size, chunk_size, tol, log=True, scatter_modes=True, omega=0.5,
                          calculate_max_local_modes=False):
     start = timer()
 
@@ -16,7 +16,7 @@ def rapod_timechunk_wise(grid_size, chunk_size, tol, log=True, scatter_modes=Tru
     b = HapodBasics(grid_size, chunk_size, epsilon_ast=tol, omega=omega)
     b.rooted_tree_depth = b.num_chunks + b.size_rank_0_group
 
-    filename = "RAPOD_timechunk_wise"
+    filename = "HAPOD_timechunk_wise"
     log_file = None
     if log and b.rank_world == 0:
         log_file = b.get_log_file(filename)
@@ -39,23 +39,23 @@ def rapod_timechunk_wise(grid_size, chunk_size, tol, log=True, scatter_modes=Tru
                 max_local_modes = max(max_local_modes, len(modes))
             else:
                 max_vectors_before_pod = max(max_vectors_before_pod, len(modes) + len(gathered_vectors))
-                modes, svals = b.scal_and_pod_for_rapod(modes, svals, gathered_vectors, total_num_snapshots)
+                modes, svals = b.scal_and_pod_for_hapod(modes, svals, gathered_vectors, total_num_snapshots)
                 max_local_modes = max(max_local_modes, len(modes))
             del gathered_vectors
             if log and b.rank_world == 0:
-                log_file.write("In the first pod, in step " + str(i) + " there are " + str(len(modes)) +
-                               " of " + str(total_num_snapshots) + " left!\n")
+                log_file.write("After the POD with timechunks " + str(i) + " there are " + str(len(modes)) +
+                               " modes of " + str(total_num_snapshots) + " snapshots left!\n")
 
     if b.rank_proc == 0:
-        final_modes, svals, total_num_snapshots, max_vectors_before_pod_in_rapod, max_local_modes_in_rapod \
-            = b.rapod_over_ranks(b.comm_rank_0_group,
-                                 modes,
-                                 svals,
-                                 total_num_snapshots,
-                                 last_rapod=True,
-                                 logfile=log_file)
-        max_vectors_before_pod = max(max_vectors_before_pod, max_vectors_before_pod_in_rapod)
-        max_local_modes = max(max_local_modes, max_local_modes_in_rapod)
+        final_modes, svals, total_num_snapshots, max_vectors_before_pod_in_hapod, max_local_modes_in_hapod \
+            = b.live_hapod_over_ranks(b.comm_rank_0_group,
+                                      modes,
+                                      svals,
+                                      total_num_snapshots,
+                                      last_hapod=True,
+                                      logfile=log_file)
+        max_vectors_before_pod = max(max_vectors_before_pod, max_vectors_before_pod_in_hapod)
+        max_local_modes = max(max_local_modes, max_local_modes_in_hapod)
         del modes
     else:
         final_modes, svals, total_num_snapshots = (np.empty(shape=(0, 0)), None, None)
@@ -69,15 +69,15 @@ def rapod_timechunk_wise(grid_size, chunk_size, tol, log=True, scatter_modes=Tru
 
     # write statistics to file
     if log and b.rank_world == 0:
-        log_file.write("There were %d basis vectors taken from a total of %d snapshots!\n" % (len(final_modes), 
+        log_file.write("The HAPOD resulted in %d final modes taken from a total of %d snapshots!\n" % (len(final_modes), 
                                                                                               total_num_snapshots))
         if calculate_max_local_modes:
             log_file.write("The maximal number of local modes was: " + str(max_local_modes) + "\n")
-            log_file.write("The maximal number of vectors before pod was: " + str(max_vectors_before_pod) + "\n")
+            log_file.write("The maximal number of input vectors to a local POD was: " + str(max_vectors_before_pod) + "\n")
         log_file.write("The maximum amount of memory used on rank 0 was: " +
                        str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2) + " GB\n")
         elapsed = timer() - start
-        log_file.write("time elapsed: " + str(elapsed) + "\n")
+        log_file.write("Time elapsed: " + str(elapsed) + "\n")
         log_file.close()
 
     if scatter_modes:
@@ -91,9 +91,19 @@ if __name__ == "__main__":
     chunk_size = int(sys.argv[2])
     tol = float(sys.argv[3])
     omega = float(sys.argv[4])
-    final_modes, _, total_num_snapshots, b, _, _ = rapod_timechunk_wise(grid_size, chunk_size, tol * grid_size,
+    final_modes, _, total_num_snapshots, b, _, _ = hapod_timechunk_wise(grid_size, chunk_size, tol * grid_size,
                                                                         omega=omega, calculate_max_local_modes=True)
-    filename = "RAPOD_timechunk_wise_error"
-    calculate_error(filename, final_modes, total_num_snapshots, b)
+    filename = "HAPOD_timechunk_wise"
+    filename_errors = "HAPOD_timechunk_wise_error"
+    calculate_error(filename_errors, final_modes, total_num_snapshots, b, grid_size)
+    b.comm_world.Barrier()
+    if b.rank_world == 0:
+        log_file = b.get_log_file(filename, "r")
+        log_file_errors = b.get_log_file(filename_errors, "r")
+        print("\n\n\nResults:\n")
+        print(log_file.read())
+        print(log_file_errors.read())
+        log_file.close()
+        log_file_errors.close()
 
 

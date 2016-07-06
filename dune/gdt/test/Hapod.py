@@ -98,9 +98,9 @@ class HapodBasics:
                               False,
                               *mu)
 
-    def get_log_file(self, file_name):
+    def get_log_file(self, file_name, mode="w"):
         return open(file_name + "_gridsize_%d_chunksize_%d_tol_%g_omega_%g_rank_%d"
-                    % (self.gridsize, self.chunk_size, self.epsilon_ast, self.omega, self.rank_world), "w")
+                    % (self.gridsize, self.chunk_size, self.epsilon_ast, self.omega, self.rank_world), mode)
 
     def calculate_trajectory_error(self, finalmodes):
         error = 0
@@ -138,7 +138,7 @@ class HapodBasics:
             modes.scal(svals)
         return modes
 
-    def scal_and_pod_for_rapod(self, modes, svals, next_vectors, num_snapshots_in_associated_leafs, root_of_tree=False, 
+    def scal_and_pod_for_hapod(self, modes, svals, next_vectors, num_snapshots_in_associated_leafs, root_of_tree=False, 
                                orthonormalize=True):
         len_modes = len(modes)
         len_next = len(next_vectors)
@@ -215,8 +215,8 @@ class HapodBasics:
         else:
             return vectors_gathered, num_snapshots_in_associated_leafs
 
-    def rapod_over_ranks(self, comm, modes=None, singular_values=None, num_snapshots_in_associated_leafs=None, 
-                         last_rapod=False, modes_creator=None, logfile=None):
+    def live_hapod_over_ranks(self, comm, modes=None, singular_values=None, num_snapshots_in_associated_leafs=None, 
+                              last_hapod=False, modes_creator=None, logfile=None):
         rank = comm.Get_rank()
         size = comm.Get_size()
         final_modes = modes if rank == 0 else np.empty(shape=(0, 0))
@@ -256,15 +256,15 @@ class HapodBasics:
                         final_modes, svals = self.pod(final_modes, total_num_snapshots)
                         max_local_modes = max(max_local_modes, len(final_modes))
                         if logfile is not None and self.rank_world == 0:
-                            logfile.write("In the RAPOD over ranks, after rank " + str(current_rank) + " there are " +
+                            logfile.write("In the live HAPOD over ranks, after rank " + str(current_rank) + " there are " +
                                           str(len(final_modes)) + " of " + str(total_num_snapshots) + " left!\n")
                     else:
                         final_modes, svals \
-                            = self.scal_and_pod_for_rapod(final_modes, svals, modes_on_source, total_num_snapshots,
-                                                          root_of_tree=(current_rank == size - 1 and last_rapod))
+                            = self.scal_and_pod_for_hapod(final_modes, svals, modes_on_source, total_num_snapshots,
+                                                          root_of_tree=(current_rank == size - 1 and last_hapod))
                         max_local_modes = max(max_local_modes, len(final_modes))
                         if logfile is not None and self.rank_world == 0:
-                            logfile.write("In the RAPOD over ranks, after rank " + str(current_rank) + " there are " +
+                            logfile.write("In the live HAPOD over ranks, after rank " + str(current_rank) + " there are " +
                                           str(len(final_modes)) + " of " + str(total_num_snapshots) + " left!\n")
                         del modes_on_source
         return final_modes, svals, total_num_snapshots, max_vecs_before_pod, max_local_modes
@@ -307,7 +307,7 @@ class HapodBasics:
             error = np.sqrt(np.sum(trajectory_errors) / total_num_snapshots)
         return error
 
-    def rapod_on_trajectory(self):
+    def live_hapod_on_trajectory(self):
         modes = self.solver.next_n_time_steps(self.chunk_size, self.with_half_steps)
         total_num_snapshots = len(modes)
         chunks_done = 1
@@ -321,13 +321,13 @@ class HapodBasics:
                 del next_vectors
                 modes, svals = self.pod(modes, total_num_snapshots)
             else:
-                modes, svals = self.scal_and_pod_for_rapod(modes, svals, next_vectors, total_num_snapshots)
+                modes, svals = self.scal_and_pod_for_hapod(modes, svals, next_vectors, total_num_snapshots)
                 del next_vectors
         assert chunks_done == int(self.num_chunks)
         return modes, svals, total_num_snapshots
 
 
-def calculate_error(filename, final_modes, total_num_snapshots, b):
+def calculate_error(filename, final_modes, total_num_snapshots, b, grid_size=0):
     # Test: solve problem again to calculate error
     # broadcast final modes to rank 0 on each processor and calculate trajectory error on rank 0
     if b.rank_world == 0:
@@ -335,10 +335,12 @@ def calculate_error(filename, final_modes, total_num_snapshots, b):
     start = timer()
     err = b.calculate_total_projection_error(final_modes, total_num_snapshots)
     if b.rank_world == 0:
+        err = err if grid_size == 0 else err/grid_size
         elapsed = timer() - start
-        log_file.write("time used for calculating error: " + str(elapsed) + "\n")
+        log_file.write("Time used for calculating error: " + str(elapsed) + "\n")
         log_file.write("l2_mean_error is: " + str(err) + "\n")
         log_file.write("The maximum amount of memory used calculating the error on rank " + str(b.rank_world) +
                        " was: " + str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2) + " GB\n")
         log_file.close()
+    
     return err
