@@ -122,11 +122,11 @@ class HapodBasics:
 
     def pod(self, vectorarray, num_snapshots_in_associated_leafs, root_of_tree=False):
         if not root_of_tree:
-            epsilon_alpha = self.epsilon_ast * self.omega * \
+            epsilon_alpha = self.epsilon_ast * np.sqrt(1. - self.omega**2) * \
                             np.sqrt(num_snapshots_in_associated_leafs) / np.sqrt(len(vectorarray) *
                                                                                  (self.rooted_tree_depth - 1))
         else:
-            epsilon_alpha = self.epsilon_ast * (1. - self.omega) * \
+            epsilon_alpha = self.epsilon_ast * self.omega * \
                             np.sqrt(num_snapshots_in_associated_leafs) / np.sqrt(len(vectorarray))
         return pod(vectorarray, atol=0., rtol=0., l2_mean_err=epsilon_alpha, orthonormalize=False, check=False)
 
@@ -162,9 +162,9 @@ class HapodBasics:
 
         epsilon_alpha = np.sqrt(num_snapshots_in_associated_leafs) / np.sqrt(len_modes + len_next) * self.epsilon_ast
         if not root_of_tree:
-            epsilon_alpha *= self.omega / np.sqrt(self.rooted_tree_depth - 1)
+            epsilon_alpha = epsilon_alpha * np.sqrt(1. - self.omega**2) / np.sqrt(self.rooted_tree_depth - 1)
         else:
-            epsilon_alpha *= (1 - self.omega)
+            epsilon_alpha = epsilon_alpha * self.omega
         below_err = np.where(errs <= epsilon_alpha**2 * (len_modes + len_next))[0]
         first_below_err = below_err[0]
         svals = np.sqrt(EVALS[:first_below_err])
