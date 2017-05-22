@@ -8,8 +8,8 @@ from pymor.operators.constructions import VectorOperator, ConstantOperator, Linc
 from pymor.parameters.base import ParameterType
 from pymor.parameters.functionals import ExpressionParameterFunctional, ProjectionParameterFunctional
 from pymor.parameters.spaces import CubicParameterSpace
-from pymor.vectorarrays.interfaces import VectorSpace
-from pymor.vectorarrays.list import VectorInterface, ListVectorArray
+from pymor.vectorarrays.interfaces import VectorSpaceInterface
+from pymor.vectorarrays.list import VectorInterface, ListVectorArray, ListVectorSpace
 
 import libboltzmann
 from libboltzmann import CommonDenseVector
@@ -27,11 +27,11 @@ class Solver(object):
 
     def solve(self, with_half_steps=False):
         result = self.impl.solve(with_half_steps)
-        return ListVectorArray(map(DuneStuffVector, result))
+        return ListVectorArray(map(DuneStuffVector, result), DuneStuffListVectorSpace(self.get_initial_values().dim))
 
     def next_n_time_steps(self, n, with_half_steps=False):
         result = self.impl.next_n_time_steps(n, with_half_steps)
-        return ListVectorArray(map(DuneStuffVector, result))
+        return ListVectorArray(map(DuneStuffVector, result), DuneStuffListVectorSpace(self.get_initial_values().dim))
 
     def reset(self):
         self.impl.reset()
@@ -76,22 +76,18 @@ class Solver(object):
 
 class BoltzmannDiscretizationBase(DiscretizationBase):
 
-    special_operators = frozenset({'lf', 'rhs'})
-    special_vector_operators = frozenset({'initial_data'})
+    special_operators = frozenset({'lf', 'rhs', 'initial_data'})
 
-    def __init__(self, nt=60, dt=0.056, t_end=3.2, initial_data=None, lf=None, rhs=None, operators=None, functionals=None,
-                 vector_operators=None, products=None, estimator=None, visualizer=None, parameter_space=None,
-                 cache_region=None, name=None):
-        super(BoltzmannDiscretizationBase, self).__init__(
-            initial_data=initial_data, lf=lf, rhs=rhs,
-            operators=operators, functionals=functionals, vector_operators=vector_operators, products=products,
-            estimator=estimator, visualizer=visualizer, cache_region=cache_region, name=name
-        )
+    def __init__(self, nt=60, dt=0.056, t_end=3.2, initial_data=None, operators=None,
+                 products=None, estimator=None, visualizer=None, parameter_space=None,
+                 cache_region=None, name=None, lf=None, rhs=None):
+        super(BoltzmannDiscretizationBase, self).__init__(operators=operators, products=products,
+            estimator=estimator, visualizer=visualizer, cache_region=cache_region, name=name, lf=lf, rhs=rhs, initial_data=initial_data)
         self.nt = nt
         self.dt = dt
         self.t_end = t_end
         self.solution_space = self.initial_data.range
-        self.build_parameter_type(PARAMETER_TYPE, local_global=True)
+        self.build_parameter_type(PARAMETER_TYPE)
         self.parameter_space = parameter_space
 
     def _solve(self, mu=None, return_half_steps=False):
@@ -115,14 +111,19 @@ class BoltzmannDiscretizationBase(DiscretizationBase):
             return U
 
     def as_generic_type(self):
-        return BoltzmannDiscretizationBase(**{k: getattr(self, k) for k in BoltzmannDiscretizationBase._init_arguments})
+        init_args = {k: getattr(self, k) for k in BoltzmannDiscretizationBase._init_arguments}
+        operators = dict(self.operators)
+        for on in self.special_operators:#
+            del operators[on]
+        init_args['operators'] = operators
+        return BoltzmannDiscretizationBase(**init_args)
 
 
 class DuneDiscretization(BoltzmannDiscretizationBase):
 
     def __init__(self, nt=60, dt=0.056, *args):
         self.solver = solver = Solver(*args)
-        initial_data = VectorOperator(ListVectorArray([solver.get_initial_values()]))
+        initial_data = VectorOperator(ListVectorArray([solver.get_initial_values()], DuneStuffListVectorSpace(solver.get_initial_values().dim)))
         dim = initial_data.range.dim
         lf_operator = LFOperator(self.solver, dim)
         self.non_decomp_rhs_operator = ndrhs = RHSOperator(self.solver, dim)
@@ -156,8 +157,8 @@ class LinearOperator(OperatorBase):
         self.op = op
         self.name = op.name + '_wrapped_as_linear_op'
 
-    def apply(self, U, ind=None, mu=None):
-        return self.op.apply(U, ind=ind, mu=mu)
+    def apply(self, U, mu=None):
+        return self.op.apply(U, mu=mu)
 
 
 class DuneOperatorBase(OperatorBase):
@@ -166,14 +167,14 @@ class DuneOperatorBase(OperatorBase):
 
     def __init__(self, solver, dim):
         self.solver = solver
-        self.source = self.range = DuneStuffVectorSpace(CommonDenseVector, dim)
+        self.source = self.range = DuneStuffListVectorSpace(dim)
 
-    def apply(self, U, ind=None, mu=None):
+    def apply(self, U, mu=None):
         assert U in self.source
         mu = self.parse_parameter(mu)
-        vectors = U._list if ind is None else [U._list[i] for i in ind]
+        vectors = U._list
         result = [DuneStuffVector(self._apply_vector(u.impl, mu)) for u in vectors]
-        return ListVectorArray(result, subtype=U.subtype)
+        return ListVectorArray(result, self.range)
 
 
 class LFOperator(DuneOperatorBase):
@@ -194,7 +195,7 @@ class RHSOperator(DuneOperatorBase):
 
     def __init__(self, solver, dim):
         super(RHSOperator, self).__init__(solver, dim)
-        self.build_parameter_type(PARAMETER_TYPE, local_global=True)
+        self.build_parameter_type(PARAMETER_TYPE)
 
     def _apply_vector(self, u, mu):
         self.solver.set_rhs_operator_params(*map(float, mu['s']))
@@ -299,6 +300,30 @@ class DuneStuffVector(VectorInterface):
         self.impl = state[0](len(state[1]), 0.)
         self.data[:] = state[1]
 
+class DuneStuffListVectorSpace(ListVectorSpace):
 
-def DuneStuffVectorSpace(impl_type, dim):
-    return VectorSpace(ListVectorArray, (DuneStuffVector, (impl_type, dim)))
+    def __init__(self, dim, id_=None):
+        self.dim = dim
+        self.id = id_
+
+    def __eq__(self, other):
+        return type(other) is DuneStuffListVectorSpace and self.dim == other.dim and self.id == other.id
+
+    @classmethod
+    def space_from_vector_obj(cls, vec, id_):
+        return cls(len(vec), id_)
+
+    @classmethod
+    def space_from_dim(cls, dim, id_):
+        return cls(dim, id_)
+
+    def zero_vector(self):
+        return DuneStuffVector(CommonDenseVector(self.dim, 0))
+
+    def make_vector(self, obj):
+        obj = CommonDenseVector(dim, 0)
+        return NumpyVector(obj)
+
+    def vector_from_data(self, data):
+        return self.make_vector(data)
+

@@ -241,7 +241,7 @@ public:
     while (DSC::FloatCmp::lt(t, t_end) && time_step_counter < n) {
       TimeFieldType max_dt = dt;
       // match saving times and t_end exactly
-      if (DSC::FloatCmp::gt(t + dt, t_end))
+      if (DSC::FloatCmp::ge(t + dt, t_end))
         max_dt = t_end - t;
 
       static double dt1 = 0;

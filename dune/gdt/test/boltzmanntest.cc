@@ -262,7 +262,7 @@ public:
 
   bool finished()
   {
-    return DSC::FloatCmp::eq(timestepper_->current_time(), 3.2);
+    return DSC::FloatCmp::ge(timestepper_->current_time(), 3.2);
   }
 
   void init(const std::string output_dir = "boltzmann", const size_t num_save_steps = 10,

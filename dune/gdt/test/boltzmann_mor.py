@@ -7,7 +7,7 @@ from mpi4py import MPI
 
 from pymor.basic import *
 from boltzmann.wrapper import DuneDiscretization
-from boltzmann_HAPOD_timechunk_wise import hapod_timechunk_wise
+from boltzmann_Hapod_timechunk_wise_node_live_Hapod import hapod_timechunk_wise
 
 
 def calculate_mean_l2_error_for_random_samples(basis, b, seed = MPI.COMM_WORLD.Get_rank()*time.clock(), 
@@ -74,5 +74,5 @@ if __name__ == "__main__":
         print('Solving the high-dimensional problem took %g seconds on average.' % elapsed_high_dim_mean)
         print('Solving the reduced problem took %g seconds on average.' % elapsed_red_mean)
         print('The mean l2 reduction error and mean l2 projection error were %g and %g, respectively.'
-              % (red_err/grid_size, proj_err/grid_size))
+              % (red_err, proj_err))
         

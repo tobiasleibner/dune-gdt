@@ -27,7 +27,7 @@ def boltzmann_standard_pod(grid_size, tol, log=True, bcast_modes=True):
     singularvalues = None
     elapsed_pod = 0
     if b.rank_world == 0:
-        result, singularvalues = pod(result, atol=0., rtol=0., l2_mean_err=b.epsilon_ast)
+        result, singularvalues = pod(result, atol=0., rtol=0., l2_err=b.epsilon_ast*np.sqrt(total_num_snapshots))
         elapsed_pod = timer() - start
         if log:
             log_file.write("After the POD, there are " + str(len(result)) + " modes of " + str(total_num_snapshots) + " snapshots left!\n")
