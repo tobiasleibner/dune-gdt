@@ -205,7 +205,7 @@ class HapodBasics:
         total_num_modes = comm.reduce(len(vectorarray), op=MPI.SUM, root=0)
         # create empty numpy array on rank 0 as a buffer to receive the pod modes from each core
         vectors_gathered = np.empty(shape=(total_num_modes, self.vector_length)) if rank == 0 else None
-        svals_gathered = np.empty(shape=(total_num_modes,)) if rank == 0 else None
+        svals_gathered = np.empty(shape=(total_num_modes,)) if (rank == 0 and svals is not None) else None
         # gather the modes (as numpy array, thus the call to data) in vectors_gathered.
         displacements = []
         displacements_svals = []

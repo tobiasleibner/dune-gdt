@@ -59,7 +59,6 @@ def hapod_timechunk_wise(grid_size, chunk_size, tol, log=True, bcast_modes=True,
             else:
                 if len(modes) > 0:
                     modes.scal(svals)
-                print("     ssssssssssssssssssssssssss " + str(gathered_svals))
                 assert(gathered_svals is None or gathered_svals == [None]*b.size_proc)
                 modes.append(gathered_vectors)
                 modes, svals = b.pod(modes, total_num_snapshots)
@@ -70,7 +69,6 @@ def hapod_timechunk_wise(grid_size, chunk_size, tol, log=True, bcast_modes=True,
                                " modes of " + str(total_num_snapshots) + " snapshots left!\n")
 
     start2 = timer();
-    print("Starting")
     if b.rank_proc == 0:
         final_modes, svals, total_num_snapshots, max_vectors_before_pod_in_hapod, max_local_modes_in_hapod \
             = b.hapod_over_node_binary_tree(b.comm_rank_0_group,
