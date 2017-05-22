@@ -52,14 +52,14 @@ def hapod_timechunk_wise(grid_size, chunk_size, tol, log=True, bcast_modes=True,
                                                                                            svals=timestep_svals)
         if b.rank_proc == 0:
             total_num_snapshots += num_snapshots_in_this_chunk
+            max_vectors_before_pod = max(max_vectors_before_pod, len(modes) + len(gathered_vectors))
             if incremental_pod and i > 0:
-                max_vectors_before_pod = max(max_vectors_before_pod, len(modes) + len(gathered_vectors))
-                assert(gathered_svals is not None)
+                #pickle.dump([modes, svals, gathered_vectors, gathered_svals], open("modes_svals_nextmodes_svals_before_normal_pod", 'wb'))
                 modes, svals = b.scal_and_pod_for_hapod(modes, svals, gathered_vectors, total_num_snapshots, svals2=gathered_svals)
+                #pickle.dump([modes, svals], open("modes_svals_after_normal_pod", 'wb'))
             else:
                 if len(modes) > 0:
                     modes.scal(svals)
-                assert(gathered_svals is None or gathered_svals == [None]*b.size_proc)
                 modes.append(gathered_vectors)
                 modes, svals = b.pod(modes, total_num_snapshots)
             max_local_modes = max(max_local_modes, len(modes))

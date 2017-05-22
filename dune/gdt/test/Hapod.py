@@ -154,6 +154,9 @@ class HapodBasics:
         if svals2 is not None:
             next_vectors.scal(svals2)
 
+        #modes.append(next_vectors)
+        #return self.pod(modes, num_snapshots_in_associated_leafs, root_of_tree=root_of_tree, orthonormalize=orthonormalize)
+
         # calculate gramian without recalculating the gramian for modes
         gramian = np.empty((len_modes + len_next,) * 2)
         gramian[:len_modes, :len_modes] = np.diag(svals)**2
@@ -173,7 +176,7 @@ class HapodBasics:
 
         errs = np.concatenate((np.cumsum(EVALS[::-1])[::-1], [0.]))
 
-        epsilon_alpha = self.get_epsilon_alpha(num_snapshots_in_associated_leafs, root_of_tree)
+        epsilon_alpha = self.get_epsilon_alpha(num_snapshots_in_associated_leafs, root_of_tree=root_of_tree)
         below_err = np.where(errs <= epsilon_alpha**2)[0]
         first_below_err = below_err[0]
 
@@ -322,10 +325,11 @@ class HapodBasics:
                     if rank == sending_rank:
                         comm.send(len(modes), dest=receiving_rank, tag=sending_rank+1000)
                         comm.send(total_num_snapshots, dest=receiving_rank, tag=sending_rank+2000)
-                        if not incremental_pod:
-                            modes.scal(svals)
-                        else:
+                        if incremental_pod:
                             comm.Send(svals, dest=receiving_rank, tag=sending_rank+4000)
+                        else:
+                            modes.scal(svals)
+
                         comm.Send(modes.data, dest=receiving_rank, tag=sending_rank+3000)
                         modes._list = None
                     elif rank == receiving_rank: 
