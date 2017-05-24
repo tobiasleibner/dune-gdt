@@ -4,8 +4,7 @@ from timeit import default_timer as timer
 import sys
 from hapod import pod, HapodParameters
 from mpiwrapper import MPIWrapper 
-from boltzmannutility import calculate_error, create_and_scatter_boltzmann_parameters, create_boltzmann_solver, solver_statistics, create_listvectorarray
-from hapodimplementations import binary_tree_hapod_over_ranks, binary_tree_depth 
+from boltzmannutility import calculate_error, create_and_scatter_boltzmann_parameters, create_boltzmann_solver
 from pymor.algorithms.pod import pod as pymor_pod
 
 def boltzmann_pod(grid_size, tol, logfile=None):
@@ -45,7 +44,7 @@ def boltzmann_pod(grid_size, tol, logfile=None):
             elapsed = timer() - start
             logfile.write("Time elapsed: " + str(elapsed) + "\n")
 
-    return result, svals, total_num_snapshots, mpi, mu
+    return result, svals, total_num_snapshots, mu, mpi, elapsed_data_gen, elapsed_pod
 
 
 if __name__ == "__main__":
@@ -53,7 +52,7 @@ if __name__ == "__main__":
     tol = float(sys.argv[2])
     filename = "POD_gridsize_%d_tol_%f" % (grid_size, tol)
     logfile = open(filename, "a")
-    final_modes, _, total_num_snapshots, mpi, mu = boltzmann_pod(grid_size, tol * grid_size, logfile=logfile)
+    final_modes, _, total_num_snapshots, mu, mpi, _, _ = boltzmann_pod(grid_size, tol * grid_size, logfile=logfile)
     final_modes, _ = mpi.shared_memory_bcast_modes(final_modes)
     calculate_error(final_modes, grid_size, mu, total_num_snapshots, mpi, logfile=logfile)
     logfile.close()

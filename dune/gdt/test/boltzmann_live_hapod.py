@@ -85,7 +85,7 @@ def boltzmann_live_hapod(grid_size, chunk_size, tol, omega=0.95, logfile=None, i
         logfile.write("Time for final HAPOD over nodes:" + str(timer()-start2) +"\n")
         logfile.write("Time for all:" + str(timer()-start) +"\n")
 
-    return final_modes, svals, total_num_snapshots, mpi, max_vectors_before_pod, max_local_modes, mu, solver
+    return final_modes, svals, total_num_snapshots, mu, mpi, max_vectors_before_pod, max_local_modes, solver
 
 
 if __name__ == "__main__":
@@ -96,7 +96,7 @@ if __name__ == "__main__":
     incremental_pod = not (sys.argv[5] == "False" or sys.argv[5] == "0") if len(sys.argv) > 5 else True
     filename = "boltzmann_live_hapod_gridsize_%d_chunksize_%d_tol_%f_omega_%f" % (grid_size, chunk_size, tol, omega)
     logfile = open(filename, "a")
-    final_modes, _, total_num_snapshots, mpi, _, _, mu, _ = boltzmann_live_hapod(grid_size, chunk_size, tol * grid_size,
+    final_modes, _, total_num_snapshots, mu, mpi, _, _, _ = boltzmann_live_hapod(grid_size, chunk_size, tol * grid_size,
                                                                                  omega=omega, logfile=logfile, 
                                                                                  incremental_pod=incremental_pod)
     final_modes, _ = mpi.shared_memory_bcast_modes(final_modes)

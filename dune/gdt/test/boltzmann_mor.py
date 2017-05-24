@@ -7,7 +7,7 @@ from mpi4py import MPI
 
 from pymor.basic import *
 from boltzmann.wrapper import DuneDiscretization
-from boltzmann_hapod_binary_trees import hapod_binary_trees
+from boltzmann_binary_tree_hapod import boltzmann_binary_tree_hapod
 from Hapod import convert_to_listvectorarray, solver_statistics
 
 
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     chunk_size = int(sys.argv[2])
     tol = float(sys.argv[3])
     omega = float(sys.argv[4])
-    basis, _, total_num_snaps, mpi, _, _, _, solver = hapod_binary_trees(grid_size, chunk_size, tol*grid_size, omega=omega)
+    basis, _, total_num_snaps, _, mpi, _, _, solver = boltzmann_binary_tree_hapod(grid_size, chunk_size, tol*grid_size, omega=omega)
     basis, _ = mpi.shared_memory_bcast_modes(basis)
     red_errs, proj_errs, elapsed_red, elapsed_high_dim = calculate_l2_error_for_random_samples(basis, mpi, solver, grid_size, chunk_size, mean_error=False)
     red_err = np.sqrt(np.sum(red_errs) / total_num_snaps) / grid_size if mpi.rank_world == 0 else None

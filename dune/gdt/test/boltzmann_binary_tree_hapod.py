@@ -7,7 +7,7 @@ from mpiwrapper import MPIWrapper
 from boltzmannutility import calculate_error, create_and_scatter_boltzmann_parameters, create_boltzmann_solver, solver_statistics, create_listvectorarray
 from hapodimplementations import binary_tree_hapod_over_ranks, binary_tree_depth 
 
-def hapod_binary_tree(grid_size, chunk_size, tol, omega=0.95, logfile=None, incremental_pod=True):
+def boltzmann_binary_tree_hapod(grid_size, chunk_size, tol, omega=0.95, logfile=None, incremental_pod=True):
 
     start = timer()
     
@@ -87,7 +87,7 @@ def hapod_binary_tree(grid_size, chunk_size, tol, omega=0.95, logfile=None, incr
         logfile.write("Time for final HAPOD over nodes:" + str(timer()-start2) +"\n")
         logfile.write("Time for all:" + str(timer()-start) +"\n")
 
-    return final_modes, svals, total_num_snapshots, mpi, max_vectors_before_pod, max_local_modes, mu, solver
+    return final_modes, svals, total_num_snapshots, mu, mpi, max_vectors_before_pod, max_local_modes, solver
 
 
 if __name__ == "__main__":
@@ -98,9 +98,9 @@ if __name__ == "__main__":
     incremental_pod = not (sys.argv[5] == "False" or sys.argv[5] == "0") if len(sys.argv) > 5 else True
     filename = "HAPOD_binary_tree_gridsize_%d_chunksize_%d_tol_%f_omega_%f" % (grid_size, chunk_size, tol, omega)
     logfile = open(filename, "a")
-    final_modes, _, total_num_snapshots, mpi, _, _, mu, _ = hapod_binary_tree(grid_size, chunk_size, tol * grid_size,
-                                                                              omega=omega, logfile=logfile, 
-                                                                              incremental_pod=incremental_pod)
+    final_modes, _, total_num_snapshots, mu, mpi, _, _, _ = boltzmann_binary_tree_hapod(grid_size, chunk_size, tol * grid_size,
+                                                                                        omega=omega, logfile=logfile, 
+                                                                                        incremental_pod=incremental_pod)
     final_modes, _ = mpi.shared_memory_bcast_modes(final_modes)
     calculate_error(final_modes, grid_size, mu, total_num_snapshots, mpi, logfile=logfile)
     logfile.close()
