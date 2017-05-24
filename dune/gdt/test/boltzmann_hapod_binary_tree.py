@@ -7,7 +7,7 @@ from mpiwrapper import MPIWrapper
 from boltzmannutility import calculate_error, create_and_scatter_boltzmann_parameters, create_boltzmann_solver, solver_statistics, create_listvectorarray
 from hapodimplementations import binary_tree_hapod_over_ranks, binary_tree_depth 
 
-def hapod_binary_trees(grid_size, chunk_size, tol, omega=0.95, logfile=None, incremental_pod=True):
+def hapod_binary_tree(grid_size, chunk_size, tol, omega=0.95, logfile=None, incremental_pod=True):
 
     start = timer()
     
@@ -22,8 +22,7 @@ def hapod_binary_trees(grid_size, chunk_size, tol, omega=0.95, logfile=None, inc
     # calculate rooted tree depth
     node_binary_tree_depth = binary_tree_depth(mpi.comm_rank_0_group)
     node_binary_tree_depth = mpi.comm_proc.bcast(node_binary_tree_depth, root=0)
-    proc_binary_tree_depth = binary_tree_depth(mpi.comm_proc)
-    rooted_tree_depth = proc_binary_tree_depth + num_chunks-1 + node_binary_tree_depth-1
+    rooted_tree_depth = num_chunks + node_binary_tree_depth
 
     # store HAPOD parameters for easier handling
     hapod_params = HapodParameters(rooted_tree_depth, epsilon_ast=tol, omega=omega)
@@ -35,25 +34,24 @@ def hapod_binary_trees(grid_size, chunk_size, tol, omega=0.95, logfile=None, inc
         num_snapshots = len(timestep_vectors)
         # calculate POD of timestep vectors on each core
         timestep_vectors, timestep_svals = pod([timestep_vectors], num_snapshots, hapod_params, incremental=False)
-
-        # perform a HAPOD over a binary tree of cores to get modes and svals on rank 0 on each node
-        timestep_modes, timestep_svals, num_snapshots, max_vectors, max_local \
-            = binary_tree_hapod_over_ranks(mpi.comm_proc,
-                                           timestep_vectors,
-                                           num_snapshots,
-                                           hapod_params,
-                                           svals=timestep_svals,
-                                           last_hapod=False,
-                                           incremental_pod=incremental_pod)
-        max_local_modes = max(max_local_modes, max_local)
-        max_vectors_before_pod = max(max_vectors_before_pod, max_vectors)
+        timestep_vectors.scal(timestep_svals)
+        gathered_vectors, _, num_snapshots_in_this_chunk, _ = mpi.gather_on_rank_0(mpi.comm_proc,
+                                                                                   timestep_vectors,
+                                                                                   num_snapshots,
+                                                                                   num_modes_equal=False)
+        del timestep_vectors
         # if there are already modes from the last chunk of vectors, perform another pod on rank 0
         if mpi.rank_proc == 0:
-           total_num_snapshots += num_snapshots 
-           modes, svals = pod([[modes, svals], [timestep_modes, timestep_svals]], 
-                                total_num_snapshots, 
-                                hapod_params, 
-                                root_of_tree=False) if i > 0 else [timestep_modes, timestep_svals]
+            total_num_snapshots += num_snapshots_in_this_chunk
+            if i == 0:
+                modes, svals = pod([gathered_vectors], num_snapshots_in_this_chunk)
+            else:
+                max_vectors_before_pod = max(max_vectors_before_pod, len(modes) + len(gathered_vectors))
+                modes, svals = pod([[modes, svals], gathered_vectors], total_num_snapshots, 
+                                   hapod_params, incremental=incremental_pod,
+                                   root_of_tree=(i==num_chunks-1 and mpi.size_rank_0_group==1))
+            max_local_modes = max(max_local_modes, len(modes))
+            del gathered_vectors
 
     # Finally, perform a HAPOD over a binary tree of nodes
     start2 = timer();
@@ -98,10 +96,11 @@ if __name__ == "__main__":
     tol = float(sys.argv[3])
     omega = float(sys.argv[4])
     incremental_pod = not (sys.argv[5] == "False" or sys.argv[5] == "0") if len(sys.argv) > 5 else True
-    filename = "HAPOD_binary_trees_gridsize_%d_chunksize_%d_tol_%f_omega_%f" % (grid_size, chunk_size, tol, omega)
+    filename = "HAPOD_binary_tree_gridsize_%d_chunksize_%d_tol_%f_omega_%f" % (grid_size, chunk_size, tol, omega)
     logfile = open(filename, "a")
-    final_modes, _, total_num_snapshots, mpi, _, _, mu, _ = hapod_binary_trees(grid_size, chunk_size, tol * grid_size,
-                                                                            omega=omega, logfile=logfile, incremental_pod=incremental_pod)
+    final_modes, _, total_num_snapshots, mpi, _, _, mu, _ = hapod_binary_tree(grid_size, chunk_size, tol * grid_size,
+                                                                              omega=omega, logfile=logfile, 
+                                                                              incremental_pod=incremental_pod)
     final_modes, _ = mpi.shared_memory_bcast_modes(final_modes)
     calculate_error(final_modes, grid_size, mu, total_num_snapshots, mpi, grid_size, logfile=logfile)
     logfile.close()

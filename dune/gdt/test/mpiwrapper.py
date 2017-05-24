@@ -74,8 +74,9 @@ class MPIWrapper:
             assert(len(svals) == len(vectorarray))
         num_snapshots_in_associated_leafs = comm.reduce(num_snapshots_on_rank, op=MPI.SUM, root=0)
         total_num_modes = comm.reduce(len(vectorarray), op=MPI.SUM, root=0)
+        vector_length = vectorarray[0].dim if len(vectorarray) > 0 else 0
         # create empty numpy array on rank 0 as a buffer to receive the pod modes from each core
-        vectors_gathered = np.empty(shape=(total_num_modes, self.vector_length)) if rank == 0 else None
+        vectors_gathered = np.empty(shape=(total_num_modes, vector_length)) if rank == 0 else None
         svals_gathered = np.empty(shape=(total_num_modes,)) if (rank == 0 and svals is not None) else None
         # gather the modes (as numpy array, thus the call to data) in vectors_gathered.
         offsets = []
@@ -87,7 +88,6 @@ class MPIWrapper:
                 comm.Gather(svals, svals_gathered, root=0)
         else:
             # Gatherv needed because every process can send a different number of modes
-            vector_length = len(vectorarray[0]) if len(vectorarray) > 0 else 0
             counts = comm.gather(len(vectorarray)*vector_length, root=0)
             if svals is not None:
                 counts_svals = comm.gather(len(vectorarray), root=0)
@@ -107,6 +107,6 @@ class MPIWrapper:
                     comm.Gatherv(svals, None, root=0)
         vectorarray._list = None
         if rank == 0:
-            vectors_gathered = convert_to_listvectorarray(vectors_gathered, vector_length)
+            vectors_gathered = convert_to_listvectorarray(vectors_gathered)
         return vectors_gathered, svals_gathered, num_snapshots_in_associated_leafs, offsets_svals
 
