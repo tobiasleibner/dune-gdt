@@ -8,7 +8,7 @@ from mpi4py import MPI
 from pymor.basic import *
 from boltzmann.wrapper import DuneDiscretization
 from boltzmann_binary_tree_hapod import boltzmann_binary_tree_hapod
-from Hapod import convert_to_listvectorarray, solver_statistics
+from boltzmannutility import convert_to_listvectorarray, solver_statistics
 
 
 def calculate_l2_error_for_random_samples(basis, mpi, solver, grid_size, chunk_size, seed = MPI.COMM_WORLD.Get_rank()*time.clock(), 
