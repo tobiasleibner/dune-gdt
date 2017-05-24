@@ -1,6 +1,7 @@
 from boltzmann import wrapper
 from pymor.basic import *
 from pymor.vectorarrays.numpy import NumpyVectorArray, NumpyVectorSpace
+from pymor.vectorarrays.interfaces import VectorArrayInterface
 from mpi4py import MPI
 from itertools import izip
 from timeit import default_timer as timer
@@ -144,30 +145,38 @@ class HapodBasics:
 
     # avoids recalculating the gramian for known modes
     # apart from that, it is just a copy of pymors pod algorithm
-    def scal_and_pod_for_hapod(self, modes, svals, next_vectors, num_snapshots_in_associated_leafs, root_of_tree=False, 
-                               orthonormalize=True, svals2=None):
-        len_modes = len(modes)
-        len_next = len(next_vectors)
-        if len_next == 0:
-            return modes, svals   
-        modes.scal(svals)
-        if svals2 is not None:
-            next_vectors.scal(svals2)
+    def scal_and_pod_for_hapod(self, list_of_inputs, num_snapshots_in_associated_leafs, root_of_tree=False, 
+                               orthonormalize=True):
+        offsets = [0]
+        svals_provided = []
+        for modes in list_of_inputs:
+            if type(modes) is list:
+               assert(issubclass(type(modes[0]), VectorArrayInterface))
+               assert(issubclass(type(modes[1]), np.ndarray) and modes[1].ndim == 1)
+               offsets.append(offsets[-1]+len(modes[0]))
+               svals_provided.append(True)
+               print(len(modes[0]), len(modes[1]))
+               modes[0].scal(modes[1])
+            elif issubclass(type(modes), VectorArrayInterface):
+               offsets.append(offsets[-1]+len(modes))
+               svals_provided.append(False)
+            else:
+               raise ValueError("")
 
-        #modes.append(next_vectors)
-        #return self.pod(modes, num_snapshots_in_associated_leafs, root_of_tree=root_of_tree, orthonormalize=orthonormalize)
-
-        # calculate gramian without recalculating the gramian for modes
-        gramian = np.empty((len_modes + len_next,) * 2)
-        gramian[:len_modes, :len_modes] = np.diag(svals)**2
-        gramian[len_modes:, len_modes:] = next_vectors.gramian() if svals2 is None else np.diag(svals2)**2
-        cross_gramian = modes.dot(next_vectors)
-        modes.append(next_vectors)
-        next_vectors._list = None
-        del next_vectors
-        gramian[:len_modes, len_modes:] = cross_gramian
-        gramian[len_modes:, :len_modes] = cross_gramian.T
-        del cross_gramian
+        # calculate gramian and avoid recalculations
+        gramian = np.empty((offsets[-1],) * 2)
+        all_modes = self.empty_vectorarray.zeros(0)
+        for i in range(len(offsets)-1):
+            modes_i, svals_i = [list_of_inputs[i][0], list_of_inputs[i][1]] if svals_provided[i] else [list_of_inputs[i], None]
+            gramian[offsets[i]:offsets[i+1], offsets[i]:offsets[i+1]] = np.diag(svals_i)**2 if svals_provided[i] else modes_i.gramian()
+            for j in range(i,len(offsets)-1):
+                modes_j = list_of_inputs[j][0] if svals_provided[j] else list_of_inputs[j]
+                cross_gramian = modes_i.dot(modes_j)
+                gramian[offsets[i]:offsets[i+1], offsets[j]:offsets[j+1]] = cross_gramian
+                gramian[offsets[j]:offsets[j+1], offsets[i]:offsets[i+1]] = cross_gramian.T
+            all_modes.append(modes_i) 
+        modes_i._list=None
+        
         EVALS, EVECS = eigh(gramian, overwrite_a=True, turbo=True, eigvals=None)
         del gramian
 
@@ -183,8 +192,8 @@ class HapodBasics:
         svals = np.sqrt(EVALS[:first_below_err])
         EVECS = EVECS[:first_below_err]
 
-        final_modes = modes.lincomb(EVECS / svals[:, np.newaxis])
-        modes._list = None
+        final_modes = all_modes.lincomb(EVECS / svals[:, np.newaxis])
+        all_modes._list = None
         del modes
         del EVECS
 
@@ -210,8 +219,8 @@ class HapodBasics:
         vectors_gathered = np.empty(shape=(total_num_modes, self.vector_length)) if rank == 0 else None
         svals_gathered = np.empty(shape=(total_num_modes,)) if (rank == 0 and svals is not None) else None
         # gather the modes (as numpy array, thus the call to data) in vectors_gathered.
-        displacements = []
-        displacements_svals = []
+        offsets = []
+        offsets_svals = []
         if uniform_num_modes:
             comm.Gather(vectorarray.data, vectors_gathered, root=0)
             if svals is not None:
@@ -222,15 +231,15 @@ class HapodBasics:
             if svals is not None:
                 counts_svals = comm.gather(len(vectorarray), root=0)
             if rank == 0:
-                displacements = [0.]
-                for j, count in enumerate(counts[0:len(counts) - 1]):
-                    displacements.append(displacements[j] + count)
-                comm.Gatherv(vectorarray.data, [vectors_gathered, counts, displacements, MPI.DOUBLE], root=0)
+                offsets = [0]
+                for j, count in enumerate(counts):
+                    offsets.append(offsets[j] + count)
+                comm.Gatherv(vectorarray.data, [vectors_gathered, counts, offsets[0:-1], MPI.DOUBLE], root=0)
                 if svals is not None:
-                    displacements_svals = [0.]
-                    for j, count in enumerate(counts_svals[0:len(counts_svals) - 1]):
-                        displacements_svals.append(displacements_svals[j] + count)
-                    comm.Gatherv(svals, [svals_gathered, counts_svals, displacements_svals, MPI.DOUBLE], root=0)
+                    offsets_svals = [0]
+                    for j, count in enumerate(counts_svals):
+                        offsets_svals.append(offsets_svals[j] + count)
+                    comm.Gatherv(svals, [svals_gathered, counts_svals, offsets_svals[0:-1], MPI.DOUBLE], root=0)
             else:
                 comm.Gatherv(vectorarray.data, None, root=0)
                 if svals is not None:
@@ -239,7 +248,7 @@ class HapodBasics:
         if rank == 0:
             vectors_gathered = self.convert_to_listvectorarray(vectors_gathered)
         if return_displacements:
-            return vectors_gathered, svals_gathered, num_snapshots_in_associated_leafs, displacements
+            return vectors_gathered, svals_gathered, num_snapshots_in_associated_leafs, offsets, offsets_svals
         else:
             return vectors_gathered, svals_gathered, num_snapshots_in_associated_leafs
 
@@ -289,7 +298,7 @@ class HapodBasics:
                     else:
                         if incremental_pod:
                             final_modes, svals \
-                                = self.scal_and_pod_for_hapod(final_modes, svals, modes_on_source, total_num_snapshots,
+                                = self.scal_and_pod_for_hapod([[final_modes, svals], modes_on_source], total_num_snapshots,
                                                               root_of_tree=(current_rank == size - 1 and last_hapod))
                         else:
                             final_modes.scal(svals)
@@ -342,8 +351,8 @@ class HapodBasics:
                         if incremental_pod:
                             svals_on_source = np.empty(shape=(len_modes_on_source,))
                             comm.Recv(svals_on_source, source=sending_rank, tag=sending_rank+4000) 
-                            modes, svals = self.scal_and_pod_for_hapod(modes, svals, modes_on_source, total_num_snapshots,
-                                                                       svals2=svals_on_source,
+                            modes, svals = self.scal_and_pod_for_hapod([[modes, svals], [modes_on_source, svals_on_source]], 
+                                                                       total_num_snapshots, 
                                                                        root_of_tree=((len(node_ranks) == 2) and last_hapod))
                         else:
                             modes.scal(svals)
