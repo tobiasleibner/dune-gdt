@@ -44,7 +44,7 @@ def hapod_binary_tree(grid_size, chunk_size, tol, omega=0.95, logfile=None, incr
         if mpi.rank_proc == 0:
             total_num_snapshots += num_snapshots_in_this_chunk
             if i == 0:
-                modes, svals = pod([gathered_vectors], num_snapshots_in_this_chunk)
+                modes, svals = pod([gathered_vectors], num_snapshots_in_this_chunk, hapod_params)
             else:
                 max_vectors_before_pod = max(max_vectors_before_pod, len(modes) + len(gathered_vectors))
                 modes, svals = pod([[modes, svals], gathered_vectors], total_num_snapshots, 
@@ -102,7 +102,7 @@ if __name__ == "__main__":
                                                                               omega=omega, logfile=logfile, 
                                                                               incremental_pod=incremental_pod)
     final_modes, _ = mpi.shared_memory_bcast_modes(final_modes)
-    calculate_error(final_modes, grid_size, mu, total_num_snapshots, mpi, grid_size, logfile=logfile)
+    calculate_error(final_modes, grid_size, mu, total_num_snapshots, mpi, logfile=logfile)
     logfile.close()
     if mpi.rank_world == 0:
         logfile = open(filename, "r")

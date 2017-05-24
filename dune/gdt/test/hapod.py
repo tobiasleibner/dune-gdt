@@ -49,7 +49,7 @@ def pod(inputs, num_snaps_in_leafs, parameters, root_of_tree=False, orthonormali
            svals_provided.append(False)
         else:
            raise ValueError("")
-        offsets.append(offsets[-1]+len(modes[0]))
+        offsets.append(offsets[-1]+len(inputs[i][0]))
         vector_length = max(vector_length, modes[0][0].dim)
 
     if incremental:
@@ -58,6 +58,7 @@ def pod(inputs, num_snaps_in_leafs, parameters, root_of_tree=False, orthonormali
         all_modes = create_listvectorarray(0, vector_length)
         for i in range(len(inputs)):
             modes_i, svals_i = [inputs[i][0], inputs[i][1] if svals_provided[i] else None]
+            print(modes_i)
             gramian[offsets[i]:offsets[i+1], offsets[i]:offsets[i+1]] = np.diag(svals_i)**2 if svals_provided[i] else modes_i.gramian()
             for j in range(i,len(inputs)):
                 modes_j = inputs[j][0]
