@@ -25,11 +25,11 @@ class Solver(object):
         self.impl = libboltzmann.BoltzmannSolver(*args)
         self.last_mu = None
 
-    def solve(self, with_half_steps=False):
+    def solve(self, with_half_steps=True):
         result = self.impl.solve(with_half_steps)
         return ListVectorArray(map(DuneStuffVector, result), DuneStuffListVectorSpace(self.get_initial_values().dim))
 
-    def next_n_time_steps(self, n, with_half_steps=False):
+    def next_n_time_steps(self, n, with_half_steps=True):
         result = self.impl.next_n_time_steps(n, with_half_steps)
         return ListVectorArray(map(DuneStuffVector, result), DuneStuffListVectorSpace(self.get_initial_values().dim))
 
@@ -53,6 +53,9 @@ class Solver(object):
 
     def time_step_length(self):
         return self.impl.time_step_length()
+
+    def vector_length(self):
+        return self.get_initial_values().dim
 
     def get_initial_values(self):
         return DuneStuffVector(self.impl.get_initial_values())
