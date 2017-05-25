@@ -36,7 +36,6 @@ def live_hapod_over_ranks(comm, modes, num_snaps_in_leafs, parameters, svals=Non
                 if svals is not None:
                     comm.Send(svals, dest=0, tag=current_rank+3000)
                 modes._list = None
-                del modes
             # receive modes and svals
             elif rank == 0:
                 len_modes_on_source, len_svals_on_source, total_num_snapshots_on_source, vector_length \

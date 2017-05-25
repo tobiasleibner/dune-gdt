@@ -104,6 +104,7 @@ if __name__ == "__main__":
     final_modes, _ = mpi.shared_memory_bcast_modes(final_modes)
     calculate_error(final_modes, grid_size, mu, total_num_snapshots, mpi, logfile=logfile)
     logfile.close()
+    mpi.comm_world.Barrier()
     if mpi.rank_world == 0:
         logfile = open(filename, "r")
         print("\n\n\nResults:\n")
