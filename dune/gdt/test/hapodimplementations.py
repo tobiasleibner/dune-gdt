@@ -21,11 +21,12 @@ def live_hapod_over_ranks(comm, modes, num_snaps_in_leafs, parameters, svals=Non
         May be used as part of a larger HAPOD tree, in that case you need to specify whether this
         part of the tree contains the root node (last_hapod=True)'''
     rank = comm.Get_rank()
+    size = comm.Get_size()
     total_num_snapshots = num_snaps_in_leafs
     max_vecs_before_pod = len(modes)
     max_local_modes = 0 
 
-    if comm.Get_size() > 1:
+    if size > 1:
         for current_rank in range(1, comm.Get_size()):
             # send modes and svals to rank 0
             if rank == current_rank:
@@ -47,19 +48,12 @@ def live_hapod_over_ranks(comm, modes, num_snaps_in_leafs, parameters, svals=Non
                 svals_on_source = np.empty(shape=(len_modes_on_source,))
                 if len_svals_on_source > 0:
                     comm.Recv(svals_on_source, source=current_rank, tag=current_rank+3000) 
-                if incremental_pod:
-                    modes, svals = pod([[modes, svals], 
-                                        [modes_on_source, svals_on_source] if len_svals_on_source > 0 else modes_on_source], 
-                                       total_num_snapshots,
-                                       parameters,
-                                       root_of_tree=(current_rank == size - 1 and last_hapod))
-                else:
-                    if svals is not None:
-                        modes.scal(svals)
-                    if len_svals_on_source > 0:
-                        modes_on_source.scal(svals_on_source)
-                    modes.append(modes_on_source)
-                    modes, svals = pod([modes], total_num_snapshots, parameters, root_of_tree=(current_rank == size - 1 and last_hapod))
+                modes, svals = pod([[modes, svals], 
+                                    [modes_on_source, svals_on_source] if len_svals_on_source > 0 else modes_on_source], 
+                                   total_num_snapshots,
+                                   parameters,
+                                   incremental=incremental_pod,
+                                   root_of_tree=(current_rank == size - 1 and last_hapod))
                 max_local_modes = max(max_local_modes, len(modes))
                 del modes_on_source
     return modes, svals, total_num_snapshots, max_vecs_before_pod, max_local_modes
@@ -114,21 +108,12 @@ def binary_tree_hapod_over_ranks(comm, modes, num_snaps_in_leafs, parameters, sv
                     svals_on_source = np.empty(shape=(len_modes_on_source,))
                     if len_svals_on_source > 0:
                         comm.Recv(svals_on_source, source=sending_rank, tag=sending_rank+3000) 
-                    if incremental_pod:
-                        modes, svals = pod([[modes, svals],  
-                                             [modes_on_source, svals_on_source] if len_svals_on_source > 0 else modes_on_source], 
-                                           total_num_snapshots, 
-                                           parameters,
-                                           root_of_tree=((len(ranks) == 2) and last_hapod))
-                    else:
-                        if svals is not None:
-                            modes.scal(svals)
-                        if len_svals_on_source > 0:
-                            modes_on_source.scal(svals_on_source)
-                        modes.append(modes_on_source)
-                        modes, svals = pod([modes], total_num_snapshots, parameters, 
-                                           root_of_tree=((len(ranks) == 2) and last_hapod))
-                    del modes_on_source
+                    modes, svals = pod([[modes, svals],  
+                                        [modes_on_source, svals_on_source] if len_svals_on_source > 0 else modes_on_source], 
+                                       total_num_snapshots, 
+                                       parameters,
+                                       incremental=incremental_pod,
+                                       root_of_tree=((len(ranks) == 2) and last_hapod))
                     max_local_modes = max(max_local_modes, len(modes))
             ranks = list(remaining_ranks)
     return modes, svals, total_num_snapshots, max_vecs_before_pod, max_local_modes

@@ -93,8 +93,6 @@ def pod(inputs, num_snaps_in_leafs, parameters, root_of_tree=False, orthonormali
     else:
         modes = create_listvectorarray(0, vector_length)
         for i in range(len(inputs)):
-            if svals_provided[i]:
-                inputs[i][0].scal(inputs[i][1])
             modes.append(inputs[i][0])
         return pymor_pod(modes, atol=0., rtol=0., l2_err=epsilon_alpha, orthonormalize=orthonormalize, check=False)
 
