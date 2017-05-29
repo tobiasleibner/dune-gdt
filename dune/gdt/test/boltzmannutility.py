@@ -1,10 +1,12 @@
-from boltzmann import wrapper
-from pymor.vectorarrays.numpy import NumpyVectorArray, NumpyVectorSpace
 from itertools import izip
-from timeit import default_timer as timer
-import numpy as np
 import math
 import random
+from timeit import default_timer as timer
+
+import numpy as np
+from pymor.vectorarrays.numpy import NumpyVectorArray, NumpyVectorSpace
+
+from boltzmann import wrapper
 
 
 def create_and_scatter_boltzmann_parameters(comm, min_param=0., max_param=8.):
@@ -33,14 +35,17 @@ def create_and_scatter_boltzmann_parameters(comm, min_param=0., max_param=8.):
 
     return comm.scatter(parameters_list, root=0)
 
+
 def create_listvectorarray(length, vector_length):
     return wrapper.DuneStuffListVectorSpace(vector_length).zeros(length)
+
 
 def convert_to_listvectorarray(numpy_array):
     listvectorarray = create_listvectorarray(len(numpy_array), len(numpy_array[0]))
     for v, vv in izip(listvectorarray._list, numpy_array):
         v.data[:] = vv
     return listvectorarray
+
 
 def create_boltzmann_solver(gridsize, mu):
         return wrapper.Solver("boltzmann_sigma_s_s_" + str(mu[0]) + "_a_" + str(mu[1]) +
@@ -50,6 +55,7 @@ def create_boltzmann_solver(gridsize, mu):
                               False,
                               False,
                               *mu)
+
 
 def solver_statistics(solver, chunk_size, with_half_steps=True):
     num_time_steps = math.ceil(solver.t_end() / solver.time_step_length()) + 1.
@@ -61,12 +67,14 @@ def solver_statistics(solver, chunk_size, with_half_steps=True):
     assert 1 <= last_chunk_size <= chunk_size
     return num_chunks, num_time_steps
 
+
 def calculate_trajectory_error(final_modes, grid_size, mu, with_half_steps=True):
     error = 0
     solver = create_boltzmann_solver(grid_size, mu)
     while not solver.finished():
         next_vectors = solver.next_n_time_steps(1, with_half_steps)
-        next_vectors_npvecarray = NumpyVectorArray(np.zeros(shape=(len(next_vectors), next_vectors[0].dim)), NumpyVectorSpace(next_vectors[0].dim))
+        next_vectors_npvecarray = NumpyVectorArray(np.zeros(shape=(len(next_vectors), next_vectors[0].dim)),
+                                                   NumpyVectorSpace(next_vectors[0].dim))
         for vec, vec2 in izip(next_vectors_npvecarray._array, next_vectors._list):
             vec[:] = vec2.data[:]
         del next_vectors
@@ -74,19 +82,23 @@ def calculate_trajectory_error(final_modes, grid_size, mu, with_half_steps=True)
                          final_modes.lincomb(next_vectors_npvecarray.dot(final_modes))).l2_norm()**2)
     return error
 
-def calculate_total_projection_error(final_modes, grid_size, mu, total_num_snapshots, mpi_wrapper, with_half_steps=True):
+
+def calculate_total_projection_error(final_modes, grid_size, mu, total_num_snapshots, mpi_wrapper,
+                                     with_half_steps=True):
     trajectory_error = calculate_trajectory_error(final_modes, grid_size, mu, with_half_steps)
     trajectory_errors = mpi_wrapper.comm_world.gather(trajectory_error, root=0)
-    error = 0 
+    error = 0
     if mpi_wrapper.rank_world == 0:
         error = np.sqrt(np.sum(trajectory_errors) / total_num_snapshots)
     return error
 
+
 def calculate_error(final_modes, grid_size, mu, total_num_snapshots, mpi_wrapper, with_half_steps=True, logfile=None):
-    ''' Calculates projection error. As we cannot store all snapshots due to memory restrictions, the problem is 
-        solved again and the error calculated on the fly'''
+    ''' Calculates projection error. As we cannot store all snapshots due to memory restrictions, the
+        problem is solved again and the error calculated on the fly'''
     start = timer()
-    err = calculate_total_projection_error(final_modes, grid_size, mu, total_num_snapshots, mpi_wrapper, with_half_steps)
+    err = calculate_total_projection_error(final_modes, grid_size, mu, total_num_snapshots, mpi_wrapper,
+                                           with_half_steps)
     err = err if grid_size == 0 else err/grid_size
     elapsed = timer() - start
     if mpi_wrapper.rank_world == 0 and logfile is not None:

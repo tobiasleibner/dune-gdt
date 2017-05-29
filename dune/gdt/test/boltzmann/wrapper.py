@@ -1,14 +1,11 @@
-from itertools import product
-
 import numpy as np
 
 from pymor.discretizations.basic import DiscretizationBase
 from pymor.operators.basic import OperatorBase
-from pymor.operators.constructions import VectorOperator, ConstantOperator, LincombOperator
+from pymor.operators.constructions import VectorOperator, ConstantOperator, LincombOperator, LinearOperator
 from pymor.parameters.base import ParameterType
-from pymor.parameters.functionals import ExpressionParameterFunctional, ProjectionParameterFunctional
+from pymor.parameters.functionals import ExpressionParameterFunctional
 from pymor.parameters.spaces import CubicParameterSpace
-from pymor.vectorarrays.interfaces import VectorSpaceInterface
 from pymor.vectorarrays.list import VectorInterface, ListVectorArray, ListVectorSpace
 
 import libboltzmann
@@ -24,14 +21,13 @@ class Solver(object):
     def __init__(self, *args):
         self.impl = libboltzmann.BoltzmannSolver(*args)
         self.last_mu = None
+        self.solution_space = DuneStuffListVectorSpace(self.get_initial_values().dim)
 
     def solve(self, with_half_steps=True):
-        result = self.impl.solve(with_half_steps)
-        return ListVectorArray(map(DuneStuffVector, result), DuneStuffListVectorSpace(self.get_initial_values().dim))
+        return self.solution_space.make_array(self.impl.solve(with_half_steps))
 
     def next_n_time_steps(self, n, with_half_steps=True):
-        result = self.impl.next_n_time_steps(n, with_half_steps)
-        return ListVectorArray(map(DuneStuffVector, result), DuneStuffListVectorSpace(self.get_initial_values().dim))
+        return self.solution_space.make_array(self.impl.next_n_time_steps(n, with_half_steps))
 
     def reset(self):
         self.impl.reset()
@@ -69,12 +65,12 @@ class Solver(object):
     def apply_rhs_operator(self, source, *args):
         return DuneStuffVector(self.impl.apply_rhs_operator(source.impl, *args))
 
-    def set_rhs_operator_params(self, sigma_s_scattering=1, sigma_s_absorbing=0, sigma_t_scattering=1, sigma_t_absorbing=10):
+    def set_rhs_operator_params(self, sigma_s_scattering=1, sigma_s_absorbing=0, sigma_t_scattering=1,
+                                sigma_t_absorbing=10):
         mu = (sigma_s_scattering, sigma_s_absorbing, sigma_t_scattering, sigma_t_absorbing)
         if mu != self.last_mu:
             self.last_mu = mu
             self.impl.set_rhs_operator_parameters(*mu)
-
 
 
 class BoltzmannDiscretizationBase(DiscretizationBase):
@@ -84,8 +80,11 @@ class BoltzmannDiscretizationBase(DiscretizationBase):
     def __init__(self, nt=60, dt=0.056, t_end=3.2, initial_data=None, operators=None,
                  products=None, estimator=None, visualizer=None, parameter_space=None,
                  cache_region=None, name=None, lf=None, rhs=None):
-        super(BoltzmannDiscretizationBase, self).__init__(operators=operators, products=products,
-            estimator=estimator, visualizer=visualizer, cache_region=cache_region, name=name, lf=lf, rhs=rhs, initial_data=initial_data)
+        super(BoltzmannDiscretizationBase, self).__init__(
+            operators=operators, products=products,
+            estimator=estimator, visualizer=visualizer, cache_region=cache_region, name=name,
+            lf=lf, rhs=rhs, initial_data=initial_data
+        )
         self.nt = nt
         self.dt = dt
         self.t_end = t_end
@@ -116,7 +115,7 @@ class BoltzmannDiscretizationBase(DiscretizationBase):
     def as_generic_type(self):
         init_args = {k: getattr(self, k) for k in BoltzmannDiscretizationBase._init_arguments}
         operators = dict(self.operators)
-        for on in self.special_operators:#
+        for on in self.special_operators:
             del operators[on]
         init_args['operators'] = operators
         return BoltzmannDiscretizationBase(**init_args)
@@ -126,7 +125,8 @@ class DuneDiscretization(BoltzmannDiscretizationBase):
 
     def __init__(self, nt=60, dt=0.056, *args):
         self.solver = solver = Solver(*args)
-        initial_data = VectorOperator(ListVectorArray([solver.get_initial_values()], DuneStuffListVectorSpace(solver.get_initial_values().dim)))
+        initial_data = VectorOperator(ListVectorArray([solver.get_initial_values()],
+                                                      DuneStuffListVectorSpace(solver.get_initial_values().dim)))
         dim = initial_data.range.dim
         lf_operator = LFOperator(self.solver, dim)
         self.non_decomp_rhs_operator = ndrhs = RHSOperator(self.solver, dim)
@@ -143,25 +143,13 @@ class DuneDiscretization(BoltzmannDiscretizationBase):
                              ExpressionParameterFunctional('s[2]', PARAMETER_TYPE),
                              ExpressionParameterFunctional('s[3]', PARAMETER_TYPE)])
         param_space = CubicParameterSpace(PARAMETER_TYPE, 0., 10.)
-        super(DuneDiscretization, self).__init__(initial_data=initial_data, lf=lf_operator, rhs=rhs_operator, t_end = solver.t_end(), nt=nt, dt=dt,
+        super(DuneDiscretization, self).__init__(initial_data=initial_data, lf=lf_operator, rhs=rhs_operator,
+                                                 t_end=solver.t_end(), nt=nt, dt=dt,
                                                  parameter_space=param_space, name='DuneDiscretization')
 
     def _solve(self, mu=None, return_half_steps=False):
-        return self.as_generic_type().with_(rhs=self.non_decomp_rhs_operator).solve(mu=mu, return_half_steps=return_half_steps)
-
-
-class LinearOperator(OperatorBase):
-
-    linear = True
-
-    def __init__(self, op):
-        self.source = op.source
-        self.range = op.range
-        self.op = op
-        self.name = op.name + '_wrapped_as_linear_op'
-
-    def apply(self, U, mu=None):
-        return self.op.apply(U, mu=mu)
+        return self.as_generic_type().with_(rhs=self.non_decomp_rhs_operator) \
+                                     .solve(mu=mu, return_half_steps=return_half_steps)
 
 
 class DuneOperatorBase(OperatorBase):
@@ -303,6 +291,7 @@ class DuneStuffVector(VectorInterface):
         self.impl = state[0](len(state[1]), 0.)
         self.data[:] = state[1]
 
+
 class DuneStuffListVectorSpace(ListVectorSpace):
 
     def __init__(self, dim, id_=None):
@@ -324,9 +313,4 @@ class DuneStuffListVectorSpace(ListVectorSpace):
         return DuneStuffVector(CommonDenseVector(self.dim, 0))
 
     def make_vector(self, obj):
-        obj = CommonDenseVector(dim, 0)
-        return NumpyVector(obj)
-
-    def vector_from_data(self, data):
-        return self.make_vector(data)
-
+        return DuneStuffVector(obj)

@@ -1,17 +1,19 @@
-import sys
 import random
+import sys
 import time
-import numpy as np
 from timeit import default_timer as timer
-from mpi4py import MPI
 
-from pymor.basic import *
+from mpi4py import MPI
+import numpy as np
+from pymor.reductors.basic import reduce_generic_rb
+
 from boltzmann.wrapper import DuneDiscretization
 from boltzmann_binary_tree_hapod import boltzmann_binary_tree_hapod
 from boltzmannutility import convert_to_listvectorarray, solver_statistics
 
 
-def calculate_l2_error_for_random_samples(basis, mpi, solver, grid_size, chunk_size, seed = MPI.COMM_WORLD.Get_rank()*time.clock(), 
+def calculate_l2_error_for_random_samples(basis, mpi, solver, grid_size, chunk_size,
+                                          seed=MPI.COMM_WORLD.Get_rank()*time.clock(),
                                           mean_error=False, with_half_steps=True):
     '''Calculates model reduction and projection error for random parameter'''
 
@@ -61,14 +63,18 @@ def calculate_l2_error_for_random_samples(basis, mpi, solver, grid_size, chunk_s
     return l2_mean_errs, l2_mean_projection_errors, elapsed_red, elapsed_high_dim
 
 if __name__ == "__main__":
-    ''' Solves a HAPOD to get a basis of the reduced space and then calculates projection and model reduction error for random samples'''
+    '''Computes HAPOD to get reduced basis and then calculate projection and model reduction error for random samples'''
     grid_size = int(sys.argv[1])
     chunk_size = int(sys.argv[2])
     tol = float(sys.argv[3])
     omega = float(sys.argv[4])
-    basis, _, total_num_snaps, _, mpi, _, _, solver = boltzmann_binary_tree_hapod(grid_size, chunk_size, tol*grid_size, omega=omega)
+    basis, _, total_num_snaps, _, mpi, _, _, solver = boltzmann_binary_tree_hapod(
+        grid_size, chunk_size, tol*grid_size, omega=omega
+    )
     basis, _ = mpi.shared_memory_bcast_modes(basis)
-    red_errs, proj_errs, elapsed_red, elapsed_high_dim = calculate_l2_error_for_random_samples(basis, mpi, solver, grid_size, chunk_size, mean_error=False)
+    red_errs, proj_errs, elapsed_red, elapsed_high_dim = calculate_l2_error_for_random_samples(
+        basis, mpi, solver, grid_size, chunk_size, mean_error=False
+    )
     red_err = np.sqrt(np.sum(red_errs) / total_num_snaps) / grid_size if mpi.rank_world == 0 else None
     proj_err = np.sqrt(np.sum(proj_errs) / total_num_snaps) / grid_size if mpi.rank_world == 0 else None
     elapsed_red_mean = np.sum(elapsed_red) / len(elapsed_red) if mpi.rank_world == 0 else None
@@ -79,4 +85,3 @@ if __name__ == "__main__":
         print('Solving the reduced problem took %g seconds on average.' % elapsed_red_mean)
         print('The mean l2 reduction error and mean l2 projection error were %g and %g, respectively.'
               % (red_err, proj_err))
-        

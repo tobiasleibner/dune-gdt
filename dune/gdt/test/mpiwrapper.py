@@ -3,6 +3,7 @@ from mpi4py import MPI
 import numpy as np
 from boltzmannutility import convert_to_listvectorarray
 
+
 class MPIWrapper:
     '''Stores MPI communicators for all ranks (world), for all ranks on a single compute node (proc)
        and for all ranks that have rank 0 on their compute node (rank_0_group).
@@ -58,7 +59,7 @@ class MPIWrapper:
             else:
                 self.comm_rank_0_group.Bcast([modes_numpy, MPI.DOUBLE], root=0)
         modes = NumpyVectorArray(modes_numpy, NumpyVectorSpace(vector_length))
-        self.comm_world.Barrier() # without this barrier, non-zero ranks might exit to early
+        self.comm_world.Barrier()  # without this barrier, non-zero ranks might exit to early
         return modes, win
 
     @staticmethod
@@ -109,4 +110,3 @@ class MPIWrapper:
         if rank == 0:
             vectors_gathered = convert_to_listvectorarray(vectors_gathered)
         return vectors_gathered, svals_gathered, num_snapshots_in_associated_leafs, offsets_svals
-

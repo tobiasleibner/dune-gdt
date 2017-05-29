@@ -1,7 +1,9 @@
-from boltzmann import wrapper
-from mpi4py import MPI
-from boltzmannutility import create_and_scatter_boltzmann_parameters
 import sys
+
+from mpi4py import MPI
+
+from boltzmann import wrapper
+from boltzmannutility import create_and_scatter_boltzmann_parameters
 
 
 def visualize_solutions(grid_size=50):

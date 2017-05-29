@@ -1,9 +1,11 @@
-from pymor.vectorarrays.interfaces import VectorArrayInterface
-from pymor.algorithms.pod import pod as pymor_pod
-from pymor.basic import gram_schmidt
 import numpy as np
+from pymor.algorithms.pod import pod
+from pymor.basic import gram_schmidt
+from pymor.vectorarrays.interfaces import VectorArrayInterface
 from scipy.linalg import eigh
+
 from boltzmannutility import create_listvectorarray
+
 
 class HapodParameters:
     '''Stores the HAPOD parameters :math:`\omega`, :math:`\epsilon^\ast` and :math:`L_\mathcal{T}` for easier passing
@@ -12,7 +14,7 @@ class HapodParameters:
         self.epsilon_ast = epsilon_ast
         self.omega = omega
         self.rooted_tree_depth = rooted_tree_depth
-        
+
     def get_epsilon_alpha(self, num_snaps_in_leafs, root_of_tree=False):
         if not root_of_tree:
             epsilon_alpha = self.epsilon_ast * np.sqrt(1. - self.omega**2) * \
@@ -22,9 +24,9 @@ class HapodParameters:
         return epsilon_alpha
 
 
-def pod(inputs, num_snaps_in_leafs, parameters, root_of_tree=False, orthonormalize=True, incremental=True):
-    '''Calculates a POD in the HAPOD tree. The input is a list where each element is either a vectorarray or 
-       a pair of (orthogonal) vectorarray and singular values from an earlier POD. If incremental is True, the 
+def local_pod(inputs, num_snaps_in_leafs, parameters, root_of_tree=False, orthonormalize=True, incremental=True):
+    '''Calculates a POD in the HAPOD tree. The input is a list where each element is either a vectorarray or
+       a pair of (orthogonal) vectorarray and singular values from an earlier POD. If incremental is True, the
        algorithm avoids the recalculation of the diagonal blocks where possible by using the singular values.
        :param inputs: list of input vectors (and svals)
        :type inputs: list where each element is either a vectorarray or [vectorarray, numpy.ndarray]
@@ -40,15 +42,15 @@ def pod(inputs, num_snaps_in_leafs, parameters, root_of_tree=False, orthonormali
     epsilon_alpha = parameters.get_epsilon_alpha(num_snaps_in_leafs, root_of_tree=root_of_tree)
     for i, modes in enumerate(inputs):
         if type(modes) is list:
-           assert(issubclass(type(modes[0]), VectorArrayInterface))
-           assert(issubclass(type(modes[1]), np.ndarray) and modes[1].ndim == 1)
-           modes[0].scal(modes[1])
-           svals_provided.append(True)
+            assert(issubclass(type(modes[0]), VectorArrayInterface))
+            assert(issubclass(type(modes[1]), np.ndarray) and modes[1].ndim == 1)
+            modes[0].scal(modes[1])
+            svals_provided.append(True)
         elif issubclass(type(modes), VectorArrayInterface):
-           inputs[i] = [modes]
-           svals_provided.append(False)
+            inputs[i] = [modes]
+            svals_provided.append(False)
         else:
-           raise ValueError("")
+            raise ValueError("")
         offsets.append(offsets[-1]+len(inputs[i][0]))
         vector_length = max(vector_length, modes[0][0].dim)
 
@@ -59,14 +61,14 @@ def pod(inputs, num_snaps_in_leafs, parameters, root_of_tree=False, orthonormali
         for i in range(len(inputs)):
             modes_i, svals_i = [inputs[i][0], inputs[i][1] if svals_provided[i] else None]
             gramian[offsets[i]:offsets[i+1], offsets[i]:offsets[i+1]] = np.diag(svals_i)**2 if svals_provided[i] else modes_i.gramian()
-            for j in range(i,len(inputs)):
+            for j in range(i, len(inputs)):
                 modes_j = inputs[j][0]
                 cross_gramian = modes_i.dot(modes_j)
                 gramian[offsets[i]:offsets[i+1], offsets[j]:offsets[j+1]] = cross_gramian
                 gramian[offsets[j]:offsets[j+1], offsets[i]:offsets[i+1]] = cross_gramian.T
-            all_modes.append(modes_i) 
-        modes_i._list=None
-        
+            all_modes.append(modes_i)
+        modes_i._list = None
+
         EVALS, EVECS = eigh(gramian, overwrite_a=True, turbo=True, eigvals=None)
         del gramian
 
@@ -88,11 +90,10 @@ def pod(inputs, num_snaps_in_leafs, parameters, root_of_tree=False, orthonormali
 
         if orthonormalize:
             final_modes = gram_schmidt(final_modes, copy=False)
-        
+
         return final_modes, svals
     else:
         modes = create_listvectorarray(0, vector_length)
         for i in range(len(inputs)):
             modes.append(inputs[i][0])
-        return pymor_pod(modes, atol=0., rtol=0., l2_err=epsilon_alpha, orthonormalize=orthonormalize, check=False)
-
+        return pod(modes, atol=0., rtol=0., l2_err=epsilon_alpha, orthonormalize=orthonormalize, check=False)
