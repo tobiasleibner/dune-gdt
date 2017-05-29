@@ -6,7 +6,7 @@ import numpy as np
 
 from boltzmannutility import (calculate_error, create_and_scatter_boltzmann_parameters, create_boltzmann_solver,
                               solver_statistics, create_listvectorarray)
-from hapod import pod, HapodParameters
+from hapod import local_pod, HapodParameters
 from hapodimplementations import live_hapod_over_ranks
 from mpiwrapper import MPIWrapper
 
@@ -35,7 +35,7 @@ def boltzmann_live_hapod(grid_size, chunk_size, tol, omega=0.95, logfile=None, i
         timestep_vectors = solver.next_n_time_steps(chunk_size)
         num_snapshots = len(timestep_vectors)
         # calculate POD of timestep vectors on each core
-        timestep_vectors, timestep_svals = pod([timestep_vectors], num_snapshots, hapod_params, incremental=False)
+        timestep_vectors, timestep_svals = local_pod([timestep_vectors], num_snapshots, hapod_params, incremental=False)
         timestep_vectors.scal(timestep_svals)
         gathered_vectors, _, num_snapshots_in_this_chunk, _ = mpi.gather_on_rank_0(mpi.comm_proc,
                                                                                    timestep_vectors,
@@ -46,10 +46,10 @@ def boltzmann_live_hapod(grid_size, chunk_size, tol, omega=0.95, logfile=None, i
         if mpi.rank_proc == 0:
             total_num_snapshots += num_snapshots_in_this_chunk
             if i == 0:
-                modes, svals = pod([gathered_vectors], num_snapshots_in_this_chunk, hapod_params)
+                modes, svals = local_pod([gathered_vectors], num_snapshots_in_this_chunk, hapod_params)
             else:
                 max_vectors_before_pod = max(max_vectors_before_pod, len(modes) + len(gathered_vectors))
-                modes, svals = pod([[modes, svals], gathered_vectors], total_num_snapshots,
+                modes, svals = local_pod([[modes, svals], gathered_vectors], total_num_snapshots,
                                    hapod_params, incremental=incremental_pod,
                                    root_of_tree=(i == num_chunks-1 and mpi.size_rank_0_group == 1))
             max_local_modes = max(max_local_modes, len(modes))

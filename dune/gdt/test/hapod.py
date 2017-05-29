@@ -61,7 +61,7 @@ def local_pod(inputs, num_snaps_in_leafs, parameters, root_of_tree=False, orthon
         for i in range(len(inputs)):
             modes_i, svals_i = [inputs[i][0], inputs[i][1] if svals_provided[i] else None]
             gramian[offsets[i]:offsets[i+1], offsets[i]:offsets[i+1]] = np.diag(svals_i)**2 if svals_provided[i] else modes_i.gramian()
-            for j in range(i, len(inputs)):
+            for j in range(i+1, len(inputs)):
                 modes_j = inputs[j][0]
                 cross_gramian = modes_i.dot(modes_j)
                 gramian[offsets[i]:offsets[i+1], offsets[j]:offsets[j+1]] = cross_gramian
