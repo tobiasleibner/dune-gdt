@@ -2,6 +2,7 @@ from pymor.vectorarrays.numpy import NumpyVectorArray, NumpyVectorSpace
 from mpi4py import MPI
 import numpy as np
 from boltzmannutility import convert_to_listvectorarray
+from hapodimplementations import MPICommunicator
 
 
 class MPIWrapper:
@@ -62,12 +63,6 @@ class MPIWrapper:
         self.comm_world.Barrier()  # without this barrier, non-zero ranks might exit to early
         return modes, win
 
-    @staticmethod
-    def recv_vectorarray(comm, len_vectorarray, vector_length, source, tag):
-        received_array = np.empty(shape=(len_vectorarray, vector_length))
-        comm.Recv(received_array, source=source, tag=tag)
-        return convert_to_listvectorarray(received_array)
-
     # gathers vectorarrays (and svals if provided) on rank 0
     def gather_on_rank_0(self, comm, vectorarray, num_snapshots_on_rank, svals=None, num_modes_equal=False):
         rank = comm.Get_rank()
@@ -110,3 +105,32 @@ class MPIWrapper:
         if rank == 0:
             vectors_gathered = convert_to_listvectorarray(vectors_gathered)
         return vectors_gathered, svals_gathered, num_snapshots_in_associated_leafs, offsets_svals
+
+
+class BoltzmannMPICommunicator(MPICommunicator):
+
+    def __init__(self, comm):
+        self.comm = comm
+        self.rank = comm.Get_rank()
+        self.size = comm.Get_size()
+
+    def send_modes(self, dest, modes, svals, num_snaps_in_leafs):
+        comm = self.comm
+        rank = comm.Get_rank()
+        comm.send([len(modes), len(svals) if svals is not None else 0, num_snaps_in_leafs, modes[0].dim],
+                  dest=0, tag=rank+1000)
+        comm.Send(modes.data, dest=dest, tag=rank+2000)
+        if svals is not None:
+            comm.Send(svals, dest=dest, tag=rank+3000)
+
+    def recv_modes(self, source):
+        comm = self.comm
+        len_modes, len_svals, total_num_snapshots, vector_length = comm.recv(source=source, tag=source+1000)
+        received_array = np.empty(shape=(len_modes, vector_length))
+        comm.Recv(received_array, source=source, tag=source+2000)
+        modes = convert_to_listvectorarray(received_array)
+        svals = np.empty(shape=(len_modes,))
+        if len_svals > 0:
+            comm.Recv(svals, source=source, tag=source+3000)
+
+        return modes, svals, total_num_snapshots

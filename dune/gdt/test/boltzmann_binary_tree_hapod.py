@@ -8,7 +8,7 @@ from boltzmannutility import (calculate_error, create_and_scatter_boltzmann_para
                               solver_statistics, create_listvectorarray)
 from hapod import local_pod, HapodParameters
 from hapodimplementations import binary_tree_hapod_over_ranks, binary_tree_depth
-from mpiwrapper import MPIWrapper
+from mpiwrapper import MPIWrapper, BoltzmannMPICommunicator
 
 
 def boltzmann_binary_tree_hapod(grid_size, chunk_size, tol, omega=0.95, logfile=None, incremental_pod=True):
@@ -61,7 +61,7 @@ def boltzmann_binary_tree_hapod(grid_size, chunk_size, tol, omega=0.95, logfile=
     start2 = timer()
     if mpi.rank_proc == 0:
         final_modes, svals, total_num_snapshots, max_vectors_before_pod_in_hapod, max_local_modes_in_hapod \
-            = binary_tree_hapod_over_ranks(mpi.comm_rank_0_group,
+            = binary_tree_hapod_over_ranks(BoltzmannMPICommunicator(mpi.comm_rank_0_group),
                                            modes,
                                            total_num_snapshots,
                                            hapod_params,
