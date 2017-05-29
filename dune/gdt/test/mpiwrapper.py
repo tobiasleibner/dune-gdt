@@ -118,7 +118,7 @@ class BoltzmannMPICommunicator(MPICommunicator):
         comm = self.comm
         rank = comm.Get_rank()
         comm.send([len(modes), len(svals) if svals is not None else 0, num_snaps_in_leafs, modes[0].dim],
-                  dest=0, tag=rank+1000)
+                  dest=dest, tag=rank+1000)
         comm.Send(modes.data, dest=dest, tag=rank+2000)
         if svals is not None:
             comm.Send(svals, dest=dest, tag=rank+3000)

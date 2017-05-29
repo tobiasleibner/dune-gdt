@@ -39,15 +39,15 @@ def live_hapod_over_ranks(comm, modes, num_snaps_in_leafs, parameters, svals=Non
     max_local_modes = 0
 
     if comm.size > 1:
-        for current_rank in range(1, comm.Get_size()):
+        for current_rank in range(1, comm.size):
             # send modes and svals to rank 0
             if comm.rank == current_rank:
-                comm.send_modes(comm, 0, modes, svals, num_snaps_in_leafs)
+                comm.send_modes(0, modes, svals, num_snaps_in_leafs)
                 modes = None
             # receive modes and svals
             elif comm.rank == 0:
                 modes_on_source, svals_on_source, total_num_snapshots_on_source = \
-                    comm.recv_modes(comm, current_rank)
+                    comm.recv_modes(current_rank)
                 max_vecs_before_pod = max(max_vecs_before_pod, len(modes) + len(modes_on_source))
                 total_num_snapshots += total_num_snapshots_on_source
                 modes, svals = local_pod(
@@ -66,7 +66,7 @@ def live_hapod_over_ranks(comm, modes, num_snaps_in_leafs, parameters, svals=Non
 def binary_tree_depth(comm):
     """Calculates depth of binary tree of MPI ranks"""
     binary_tree_depth = 1
-    ranks = range(0, comm.Get_size())
+    ranks = range(0, comm.size)
     while len(ranks) > 1:
         binary_tree_depth += 1
         remaining_ranks = list(ranks)
@@ -96,11 +96,11 @@ def binary_tree_hapod_over_ranks(comm, modes, num_snaps_in_leafs, parameters, sv
                 receiving_rank = ranks[odd_index-1]
                 remaining_ranks.remove(sending_rank)
                 if comm.rank == sending_rank:
-                    comm.send_modes(comm, receiving_rank, modes, svals, total_num_snapshots)
+                    comm.send_modes(receiving_rank, modes, svals, total_num_snapshots)
                     modes = None
                 elif comm.rank == receiving_rank:
                     modes_on_source, svals_on_source, total_num_snapshots_on_source = \
-                        comm.recv_modes(comm, sending_rank)
+                        comm.recv_modes(sending_rank)
                     max_vecs_before_pod = max(max_vecs_before_pod, len(modes) + len(modes_on_source))
                     total_num_snapshots += total_num_snapshots_on_source
                     modes, svals = local_pod(
