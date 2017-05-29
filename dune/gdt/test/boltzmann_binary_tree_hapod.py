@@ -5,9 +5,8 @@ from timeit import default_timer as timer
 import numpy as np
 
 from boltzmannutility import (calculate_error, create_and_scatter_boltzmann_parameters, create_boltzmann_solver,
-                              solver_statistics, create_listvectorarray)
-from hapod import local_pod, HapodParameters
-from hapodimplementations import binary_tree_hapod_over_ranks, binary_tree_depth
+                              solver_statistics)
+from hapod import local_pod, HapodParameters, binary_tree_hapod_over_ranks, binary_tree_depth
 from mpiwrapper import MPIWrapper, BoltzmannMPICommunicator
 
 
@@ -32,17 +31,17 @@ def boltzmann_binary_tree_hapod(grid_size, chunk_size, tol, omega=0.95, logfile=
     hapod_params = HapodParameters(rooted_tree_depth, epsilon_ast=tol, omega=omega)
 
     max_vectors_before_pod, max_local_modes, total_num_snapshots, svals = [0, 0, 0, []]
-    modes = create_listvectorarray(0, solver.vector_length())
+    modes = solver.solution_space.empty()
     for i in range(num_chunks):
         timestep_vectors = solver.next_n_time_steps(chunk_size)
         num_snapshots = len(timestep_vectors)
         # calculate POD of timestep vectors on each core
         timestep_vectors, timestep_svals = local_pod([timestep_vectors], num_snapshots, hapod_params, incremental=False)
         timestep_vectors.scal(timestep_svals)
-        gathered_vectors, _, num_snapshots_in_this_chunk, _ = mpi.gather_on_rank_0(mpi.comm_proc,
-                                                                                   timestep_vectors,
-                                                                                   num_snapshots,
-                                                                                   num_modes_equal=False)
+        gathered_vectors, _, num_snapshots_in_this_chunk, _ = \
+            BoltzmannMPICommunicator(mpi.comm_proc).gather_on_rank_0(timestep_vectors,
+                                                                     num_snapshots,
+                                                                     num_modes_equal=False)
         del timestep_vectors
         # if there are already modes from the last chunk of vectors, perform another pod on rank 0
         if mpi.rank_proc == 0:

@@ -4,7 +4,7 @@ import random
 from timeit import default_timer as timer
 
 import numpy as np
-from pymor.vectorarrays.numpy import NumpyVectorArray, NumpyVectorSpace
+from pymor.vectorarrays.numpy import NumpyVectorSpace
 
 from boltzmann import wrapper
 
@@ -36,17 +36,6 @@ def create_and_scatter_boltzmann_parameters(comm, min_param=0., max_param=8.):
     return comm.scatter(parameters_list, root=0)
 
 
-def create_listvectorarray(length, vector_length):
-    return wrapper.DuneStuffListVectorSpace(vector_length).zeros(length)
-
-
-def convert_to_listvectorarray(numpy_array):
-    listvectorarray = create_listvectorarray(len(numpy_array), len(numpy_array[0]))
-    for v, vv in izip(listvectorarray._list, numpy_array):
-        v.data[:] = vv
-    return listvectorarray
-
-
 def create_boltzmann_solver(gridsize, mu):
         return wrapper.Solver("boltzmann_sigma_s_s_" + str(mu[0]) + "_a_" + str(mu[1]) +
                               "sigma_t_s_" + str(mu[2]) + "_a_" + str(mu[3]),
@@ -73,9 +62,8 @@ def calculate_trajectory_error(final_modes, grid_size, mu, with_half_steps=True)
     solver = create_boltzmann_solver(grid_size, mu)
     while not solver.finished():
         next_vectors = solver.next_n_time_steps(1, with_half_steps)
-        next_vectors_npvecarray = NumpyVectorArray(np.zeros(shape=(len(next_vectors), next_vectors[0].dim)),
-                                                   NumpyVectorSpace(next_vectors[0].dim))
-        for vec, vec2 in izip(next_vectors_npvecarray._array, next_vectors._list):
+        next_vectors_npvecarray = NumpyVectorSpace(next_vectors[0].dim).zeros(len(next_vectors))
+        for vec, vec2 in izip(next_vectors_npvecarray.data, next_vectors._list):
             vec[:] = vec2.data[:]
         del next_vectors
         error += np.sum((next_vectors_npvecarray -

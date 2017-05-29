@@ -1,8 +1,9 @@
-from pymor.vectorarrays.numpy import NumpyVectorArray, NumpyVectorSpace
+from pymor.vectorarrays.numpy import NumpyVectorSpace
 from mpi4py import MPI
 import numpy as np
-from boltzmannutility import convert_to_listvectorarray
-from hapodimplementations import MPICommunicator
+
+from hapod import MPICommunicator
+from boltzmann.wrapper import DuneStuffListVectorSpace
 
 
 class MPIWrapper:
@@ -59,12 +60,41 @@ class MPIWrapper:
                     del v
             else:
                 self.comm_rank_0_group.Bcast([modes_numpy, MPI.DOUBLE], root=0)
-        modes = NumpyVectorArray(modes_numpy, NumpyVectorSpace(vector_length))
+        modes = NumpyVectorSpace.from_data(modes_numpy)
         self.comm_world.Barrier()  # without this barrier, non-zero ranks might exit to early
         return modes, win
 
-    # gathers vectorarrays (and svals if provided) on rank 0
-    def gather_on_rank_0(self, comm, vectorarray, num_snapshots_on_rank, svals=None, num_modes_equal=False):
+
+class BoltzmannMPICommunicator(MPICommunicator):
+
+    def __init__(self, comm):
+        self.comm = comm
+        self.rank = comm.Get_rank()
+        self.size = comm.Get_size()
+
+    def send_modes(self, dest, modes, svals, num_snaps_in_leafs):
+        comm = self.comm
+        rank = comm.Get_rank()
+        comm.send([len(modes), len(svals) if svals is not None else 0, num_snaps_in_leafs, modes[0].dim],
+                  dest=dest, tag=rank+1000)
+        comm.Send(modes.data, dest=dest, tag=rank+2000)
+        if svals is not None:
+            comm.Send(svals, dest=dest, tag=rank+3000)
+
+    def recv_modes(self, source):
+        comm = self.comm
+        len_modes, len_svals, total_num_snapshots, vector_length = comm.recv(source=source, tag=source+1000)
+        received_array = np.empty(shape=(len_modes, vector_length))
+        comm.Recv(received_array, source=source, tag=source+2000)
+        modes = DuneStuffListVectorSpace.from_data(received_array)
+        svals = np.empty(shape=(len_modes,))
+        if len_svals > 0:
+            comm.Recv(svals, source=source, tag=source+3000)
+
+        return modes, svals, total_num_snapshots
+
+    def gather_on_rank_0(self, vectorarray, num_snapshots_on_rank, svals=None, num_modes_equal=False):
+        comm = self.comm
         rank = comm.Get_rank()
         if svals is not None:
             assert(len(svals) == len(vectorarray))
@@ -101,36 +131,7 @@ class MPIWrapper:
                 comm.Gatherv(vectorarray.data, None, root=0)
                 if svals is not None:
                     comm.Gatherv(svals, None, root=0)
-        vectorarray._list = None
+        del vectorarray
         if rank == 0:
-            vectors_gathered = convert_to_listvectorarray(vectors_gathered)
+            vectors_gathered = DuneStuffListVectorSpace.from_data(vectors_gathered)
         return vectors_gathered, svals_gathered, num_snapshots_in_associated_leafs, offsets_svals
-
-
-class BoltzmannMPICommunicator(MPICommunicator):
-
-    def __init__(self, comm):
-        self.comm = comm
-        self.rank = comm.Get_rank()
-        self.size = comm.Get_size()
-
-    def send_modes(self, dest, modes, svals, num_snaps_in_leafs):
-        comm = self.comm
-        rank = comm.Get_rank()
-        comm.send([len(modes), len(svals) if svals is not None else 0, num_snaps_in_leafs, modes[0].dim],
-                  dest=dest, tag=rank+1000)
-        comm.Send(modes.data, dest=dest, tag=rank+2000)
-        if svals is not None:
-            comm.Send(svals, dest=dest, tag=rank+3000)
-
-    def recv_modes(self, source):
-        comm = self.comm
-        len_modes, len_svals, total_num_snapshots, vector_length = comm.recv(source=source, tag=source+1000)
-        received_array = np.empty(shape=(len_modes, vector_length))
-        comm.Recv(received_array, source=source, tag=source+2000)
-        modes = convert_to_listvectorarray(received_array)
-        svals = np.empty(shape=(len_modes,))
-        if len_svals > 0:
-            comm.Recv(svals, source=source, tag=source+3000)
-
-        return modes, svals, total_num_snapshots

@@ -9,7 +9,7 @@ from pymor.reductors.basic import reduce_generic_rb
 
 from boltzmann.wrapper import DuneDiscretization
 from boltzmann_binary_tree_hapod import boltzmann_binary_tree_hapod
-from boltzmannutility import convert_to_listvectorarray, solver_statistics
+from boltzmannutility import solver_statistics
 
 
 def calculate_l2_error_for_random_samples(basis, mpi, solver, grid_size, chunk_size,
@@ -20,7 +20,6 @@ def calculate_l2_error_for_random_samples(basis, mpi, solver, grid_size, chunk_s
     random.seed(seed)
     mu = [random.uniform(0., 8.), random.uniform(0., 8.), 0., random.uniform(0., 8.)]
 
-    basis = convert_to_listvectorarray(basis.data)
     _, num_time_steps = solver_statistics(solver, chunk_size, with_half_steps)
 
     nt = int(num_time_steps - 1) if not with_half_steps else int((num_time_steps - 1)/2)

@@ -1,10 +1,9 @@
+from abc import abstractmethod
 import numpy as np
 from pymor.algorithms.pod import pod
 from pymor.basic import gram_schmidt
 from pymor.vectorarrays.interfaces import VectorArrayInterface
 from scipy.linalg import eigh
-
-from boltzmannutility import create_listvectorarray
 
 
 class HapodParameters:
@@ -57,7 +56,7 @@ def local_pod(inputs, num_snaps_in_leafs, parameters, root_of_tree=False, orthon
     if incremental:
         # calculate gramian avoiding recalculations
         gramian = np.empty((offsets[-1],) * 2)
-        all_modes = create_listvectorarray(0, vector_length)
+        all_modes = inputs[0][0].space.empty()
         for i in range(len(inputs)):
             modes_i, svals_i = [inputs[i][0], inputs[i][1] if svals_provided[i] else None]
             gramian[offsets[i]:offsets[i+1], offsets[i]:offsets[i+1]] = np.diag(svals_i)**2 if svals_provided[i] else modes_i.gramian()
@@ -93,7 +92,108 @@ def local_pod(inputs, num_snaps_in_leafs, parameters, root_of_tree=False, orthon
 
         return final_modes, svals
     else:
-        modes = create_listvectorarray(0, vector_length)
+        modes = inputs[0][0].empty()
         for i in range(len(inputs)):
             modes.append(inputs[i][0])
         return pod(modes, atol=0., rtol=0., l2_err=epsilon_alpha, orthonormalize=orthonormalize, check=False)
+
+
+class MPICommunicator(object):
+
+    rank = None
+    size = None
+
+    @abstractmethod
+    def send_modes(self, dest, modes, svals, num_snaps_in_leafs):
+        pass
+
+    @abstractmethod
+    def recv_modes(self, source):
+        pass
+
+
+def live_hapod_over_ranks(comm, modes, num_snaps_in_leafs, parameters, svals=None, last_hapod=False,
+                          logfile=None, incremental_pod=True):
+    ''' A live HAPOD with modes and possibly svals stored on ranks of the MPI communicator comm.
+        May be used as part of a larger HAPOD tree, in that case you need to specify whether this
+        part of the tree contains the root node (last_hapod=True)'''
+    total_num_snapshots = num_snaps_in_leafs
+    max_vecs_before_pod = len(modes)
+    max_local_modes = 0
+
+    if comm.size > 1:
+        for current_rank in range(1, comm.size):
+            # send modes and svals to rank 0
+            if comm.rank == current_rank:
+                comm.send_modes(0, modes, svals, num_snaps_in_leafs)
+                modes = None
+            # receive modes and svals
+            elif comm.rank == 0:
+                modes_on_source, svals_on_source, total_num_snapshots_on_source = \
+                    comm.recv_modes(current_rank)
+                max_vecs_before_pod = max(max_vecs_before_pod, len(modes) + len(modes_on_source))
+                total_num_snapshots += total_num_snapshots_on_source
+                modes, svals = local_pod(
+                    [[modes, svals], [modes_on_source, svals_on_source]
+                     if len(svals_on_source) > 0 else modes_on_source],
+                    total_num_snapshots,
+                    parameters,
+                    incremental=incremental_pod,
+                    root_of_tree=(current_rank == comm.size - 1 and last_hapod)
+                )
+                max_local_modes = max(max_local_modes, len(modes))
+                del modes_on_source
+    return modes, svals, total_num_snapshots, max_vecs_before_pod, max_local_modes
+
+
+def binary_tree_depth(comm):
+    """Calculates depth of binary tree of MPI ranks"""
+    binary_tree_depth = 1
+    ranks = range(0, comm.size)
+    while len(ranks) > 1:
+        binary_tree_depth += 1
+        remaining_ranks = list(ranks)
+        for odd_index in range(1, len(ranks), 2):
+            remaining_ranks.remove(ranks[odd_index])
+        ranks = remaining_ranks
+    return binary_tree_depth
+
+
+def binary_tree_hapod_over_ranks(comm, modes, num_snaps_in_leafs, parameters, svals=None,
+                                 last_hapod=True, incremental_pod=True):
+    ''' A HAPOD with modes and possibly svals stored on ranks of the MPI communicator comm. A binary tree
+        of MPI ranks is used as HAPOD tree.
+        May be used as part of a larger HAPOD tree, in that case you need to specify whether this
+        part of the tree contains the root node (last_hapod=True) '''
+    total_num_snapshots = num_snaps_in_leafs
+    max_vecs_before_pod = len(modes)
+    max_local_modes = 0
+    if comm.size > 1:
+        ranks = range(0, comm.size)
+        while len(ranks) > 1:
+            remaining_ranks = list(ranks)
+            # nodes with odd index send data to the node with index-1 where the pod is performed
+            # this ensures that the modes end up on rank 0 in the end
+            for odd_index in range(1, len(ranks), 2):
+                sending_rank = ranks[odd_index]
+                receiving_rank = ranks[odd_index-1]
+                remaining_ranks.remove(sending_rank)
+                if comm.rank == sending_rank:
+                    comm.send_modes(receiving_rank, modes, svals, total_num_snapshots)
+                    modes = None
+                elif comm.rank == receiving_rank:
+                    modes_on_source, svals_on_source, total_num_snapshots_on_source = \
+                        comm.recv_modes(sending_rank)
+                    max_vecs_before_pod = max(max_vecs_before_pod, len(modes) + len(modes_on_source))
+                    total_num_snapshots += total_num_snapshots_on_source
+                    modes, svals = local_pod(
+                        [[modes, svals], [modes_on_source, svals_on_source]
+                         if len(svals_on_source) > 0 else modes_on_source],
+                        total_num_snapshots,
+                        parameters,
+                        incremental=incremental_pod,
+                        root_of_tree=((len(ranks) == 2) and last_hapod)
+                    )
+                    max_local_modes = max(max_local_modes, len(modes))
+            ranks = list(remaining_ranks)
+    return modes, svals, total_num_snapshots, max_vecs_before_pod, max_local_modes
