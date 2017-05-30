@@ -57,8 +57,9 @@ if __name__ == "__main__":
     filename = "POD_gridsize_%d_tol_%f" % (grid_size, tol)
     logfile = open(filename, "a")
     final_modes, _, total_num_snapshots, mu, mpi, _, _, _ = boltzmann_pod(grid_size, tol * grid_size, logfile=logfile)
-    final_modes, _ = mpi.shared_memory_bcast_modes(final_modes)
+    final_modes, win = mpi.shared_memory_bcast_modes(final_modes)
     calculate_error(final_modes, grid_size, mu, total_num_snapshots, mpi, logfile=logfile)
+    win.Free()
     logfile.close()
     if mpi.rank_world == 0:
         logfile = open(filename, "r")

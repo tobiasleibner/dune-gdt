@@ -106,8 +106,9 @@ if __name__ == "__main__":
         omega=omega, logfile=logfile,
         incremental_gramian=incremental_gramian
     )
-    final_modes, _ = mpi.shared_memory_bcast_modes(final_modes)
+    final_modes, win = mpi.shared_memory_bcast_modes(final_modes)
     calculate_error(final_modes, grid_size, mu, total_num_snapshots, mpi, logfile=logfile)
+    win.Free()
     logfile.close()
     mpi.comm_world.Barrier()
     if mpi.rank_world == 0:

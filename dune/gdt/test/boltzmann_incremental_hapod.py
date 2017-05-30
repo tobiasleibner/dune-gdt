@@ -102,8 +102,9 @@ if __name__ == "__main__":
     final_modes, _, total_num_snapshots, mu, mpi, _, _, _ = boltzmann_incremental_hapod(grid_size, chunk_size, tol * grid_size,
                                                                                  omega=omega, logfile=logfile,
                                                                                  incremental_gramian=incremental_gramian)
-    final_modes, _ = mpi.shared_memory_bcast_modes(final_modes)
+    final_modes, win = mpi.shared_memory_bcast_modes(final_modes)
     calculate_error(final_modes, grid_size, mu, total_num_snapshots, mpi, grid_size, logfile=logfile)
+    win.Free()
     logfile.close()
     if mpi.rank_world == 0:
         logfile = open(filename, "r")
