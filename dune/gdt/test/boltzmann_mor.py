@@ -70,7 +70,9 @@ if __name__ == "__main__":
     basis, _, total_num_snaps, _, mpi, _, _, solver = boltzmann_binary_tree_hapod(
         grid_size, chunk_size, tol*grid_size, omega=omega
     )
-    basis, _ = mpi.shared_memory_bcast_modes(basis)
+    # This copies the basis to each MPI rank. For a large number of modes and/or a large state dimension, this
+    # may exceed the available memory. In that case, use more nodes with fewer MPI ranks per node.
+    basis = mpi.shared_memory_bcast_modes(basis, returnlistvectorarray=True)
     red_errs, proj_errs, elapsed_red, elapsed_high_dim = calculate_l2_error_for_random_samples(
         basis, mpi, solver, grid_size, chunk_size, mean_error=False
     )

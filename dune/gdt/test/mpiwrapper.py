@@ -37,8 +37,17 @@ class MPIWrapper:
         self.size_rank_0_group = self.comm_rank_0_group.Get_size()
         self.rank_rank_0_group = self.comm_rank_0_group.Get_rank()
 
-    def shared_memory_bcast_modes(self, modes):
-        ''' broadcast modes on rank 0 to all ranks by using a shared memory buffer on each node'''
+    def shared_memory_bcast_modes(self, modes, returnlistvectorarray=False):
+        ''' broadcast modes on rank 0 to all ranks by using a shared memory buffer on each node
+            :param modes: vectorarray of (HA)POD modes 
+            :param returnlistvectorarray: If False, the modes are returned as a NumpyVectorArray. On each node, 
+            the NumpyVectorArrays for all MPI ranks (one for each processor core) share the same underlying 
+            memory buffer. If True, the modes are returned as DuneStuffListVectorArray. Here, a copy is made
+            for each MPI rank, so this uses num_cores times the memory of the NumpyVectorArray (e.g. for 12
+            cores per node, it uses 12 times as much memory.
+            :returns: Either a DuneStuffListVectorArray containing the modes (if returnlistvectorarray==True)
+            or a tuple (modes, win) where modes is a NumpyVectorArray and win is the MPI window that holds the
+            shared memory buffer. You have to free the memory yourself by calling win.Free() once you are done.'''
         if modes is None:
             modes = np.empty(shape=(0, 0), dtype='d')
         modes_length = self.comm_world.bcast(len(modes) if self.rank_world == 0 else 0, root=0)
@@ -60,9 +69,14 @@ class MPIWrapper:
                     del v
             else:
                 self.comm_rank_0_group.Bcast([modes_numpy, MPI.DOUBLE], root=0)
-        modes = NumpyVectorSpace.from_data(modes_numpy)
-        self.comm_world.Barrier()  # without this barrier, non-zero ranks might exit to early
-        return modes, win
+        self.comm_world.Barrier()  # without this barrier, non-zero ranks might be too fast 
+        if returnlistvectorarray:
+            modes = DuneStuffListVectorSpace.from_data(modes_numpy)
+            win.Free()
+            return modes
+        else:
+            modes = NumpyVectorSpace.from_data(modes_numpy)
+            return modes, win
 
 
 class BoltzmannMPICommunicator(MPICommunicator):

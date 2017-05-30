@@ -4,7 +4,7 @@ from pymor.discretizations.basic import DiscretizationBase
 from pymor.operators.basic import OperatorBase
 from pymor.operators.constructions import (VectorOperator, ConstantOperator, LincombOperator, LinearOperator,
                                            FixedParameterOperator)
-from pymor.parameters.base import ParameterType
+from pymor.parameters.base import Parameter, ParameterType, Parametric
 from pymor.parameters.functionals import ExpressionParameterFunctional
 from pymor.parameters.spaces import CubicParameterSpace
 from pymor.vectorarrays.list import VectorInterface, ListVectorSpace
@@ -17,12 +17,13 @@ IMPL_TYPES = (CommonDenseVector,)
 PARAMETER_TYPE = ParameterType({'s': (4,)})
 
 
-class Solver(object):
+class Solver(Parametric):
 
     def __init__(self, *args):
         self.impl = libboltzmann.BoltzmannSolver(*args)
         self.last_mu = None
         self.solution_space = DuneStuffListVectorSpace(self.impl.get_initial_values().dim())
+        self.build_parameter_type(PARAMETER_TYPE)
 
     def solve(self, with_half_steps=True):
         return self.solution_space.make_array(self.impl.solve(with_half_steps))
@@ -295,3 +296,8 @@ class DuneStuffListVectorSpace(ListVectorSpace):
 
     def make_vector(self, obj):
         return DuneStuffVector(obj)
+
+    def vector_from_data(self, data):
+        v = self.zero_vector()
+        v.data[:] = data
+        return v 

@@ -62,12 +62,9 @@ def calculate_trajectory_error(final_modes, grid_size, mu, with_half_steps=True)
     solver = create_boltzmann_solver(grid_size, mu)
     while not solver.finished():
         next_vectors = solver.next_n_time_steps(1, with_half_steps)
-        next_vectors_npvecarray = NumpyVectorSpace(next_vectors[0].dim).zeros(len(next_vectors))
-        for vec, vec2 in izip(next_vectors_npvecarray.data, next_vectors._list):
-            vec[:] = vec2.data[:]
-        del next_vectors
-        error += np.sum((next_vectors_npvecarray -
-                         final_modes.lincomb(next_vectors_npvecarray.dot(final_modes))).l2_norm()**2)
+        next_vectors_np = NumpyVectorSpace(next_vectors[0].dim).from_data(next_vectors.data)
+        error += np.sum((next_vectors_np -
+                         final_modes.lincomb(next_vectors_np.dot(final_modes))).l2_norm()**2)
     return error
 
 
