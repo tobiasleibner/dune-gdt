@@ -11,8 +11,6 @@ from mpiwrapper import MPIWrapper
 
 def boltzmann_pod(grid_size, tol, logfile=None):
 
-    start = timer()
-
     # get MPI communicators
     mpi = MPIWrapper()
 
@@ -28,10 +26,7 @@ def boltzmann_pod(grid_size, tol, logfile=None):
     num_snapshots = len(result)
 
     # gather snapshots on rank 0
-    start = timer()
-    result, _, total_num_snapshots, _ = mpi.comm_world.gather_on_rank_0(
-        result, num_snapshots, num_modes_equal=True
-    )
+    result, _, total_num_snapshots, _ = mpi.comm_world.gather_on_rank_0(result, num_snapshots, num_modes_equal=True)
     svals = None
 
     # perform a POD
@@ -42,7 +37,8 @@ def boltzmann_pod(grid_size, tol, logfile=None):
 
     # write statistics to file
     if logfile is not None and mpi.rank_world == 0:
-            logfile.write("After the POD, there are " + str(len(result)) + " modes of " + str(total_num_snapshots) + " snapshots left!\n")
+            logfile.write("After the POD, there are " + str(len(result)) + " modes of "
+                          + str(total_num_snapshots) + " snapshots left!\n")
             logfile.write("The maximum amount of memory used on rank 0 was: " +
                           str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2) + " GB\n")
             elapsed = timer() - start

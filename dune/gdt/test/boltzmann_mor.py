@@ -67,13 +67,12 @@ if __name__ == "__main__":
     chunk_size = int(sys.argv[2])
     tol = float(sys.argv[3])
     omega = float(sys.argv[4])
-    basis, _, total_num_snaps, _, mpi, _, _, solver = boltzmann_binary_tree_hapod(
-        grid_size, chunk_size, tol*grid_size, omega=omega
-    )
+    basis, _, total_num_snaps, _, mpi, _, _, solver = boltzmann_binary_tree_hapod(grid_size, chunk_size,
+                                                                                  tol * grid_size, omega=omega)
     basis = mpi.shared_memory_bcast_modes(basis, returnlistvectorarray=True)
-    red_errs, proj_errs, elapsed_red, elapsed_high_dim = calculate_l2_error_for_random_samples(
-        basis, mpi, solver, grid_size, chunk_size, mean_error=False
-    )
+    red_errs, proj_errs, elapsed_red, elapsed_high_dim = calculate_l2_error_for_random_samples(basis, mpi, solver,
+                                                                                               grid_size, chunk_size,
+                                                                                               mean_error=False)
     red_err = np.sqrt(np.sum(red_errs) / total_num_snaps) / grid_size if mpi.rank_world == 0 else None
     proj_err = np.sqrt(np.sum(proj_errs) / total_num_snaps) / grid_size if mpi.rank_world == 0 else None
     elapsed_red_mean = np.sum(elapsed_red) / len(elapsed_red) if mpi.rank_world == 0 else None

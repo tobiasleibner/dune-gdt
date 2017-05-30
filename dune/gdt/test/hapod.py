@@ -23,7 +23,8 @@ class HapodParameters:
         return epsilon_alpha
 
 
-def local_pod(inputs, num_snaps_in_leafs, parameters, root_of_tree=False, orthonormalize=True, incremental_gramian=True):
+def local_pod(inputs, num_snaps_in_leafs, parameters, root_of_tree=False, orthonormalize=True,
+              incremental_gramian=True):
     '''Calculates a POD in the HAPOD tree. The input is a list where each element is either a vectorarray or
        a pair of (orthogonal) vectorarray and singular values from an earlier POD. If incremental_gramian is True, the
        algorithm avoids the recalculation of the diagonal blocks where possible by using the singular values.
@@ -33,7 +34,8 @@ def local_pod(inputs, num_snaps_in_leafs, parameters, root_of_tree=False, orthon
        :param parameters: An object of type HapodParameters
        :param root_of_tree: Whether this is the root of the HAPOD tree
        :param orthonormalize: Whether to reorthonormalize the resulting modes
-       :param incremental_gramian: Whether to build the gramian incrementally using information from the singular values'''
+       :param incremental_gramian: Whether to build the gramian incrementally using information from the
+       singular values'''
     # calculate offsets and check whether svals are provided in input
     offsets = [0]
     svals_provided = []
@@ -59,7 +61,8 @@ def local_pod(inputs, num_snaps_in_leafs, parameters, root_of_tree=False, orthon
         all_modes = inputs[0][0].space.empty()
         for i in range(len(inputs)):
             modes_i, svals_i = [inputs[i][0], inputs[i][1] if svals_provided[i] else None]
-            gramian[offsets[i]:offsets[i+1], offsets[i]:offsets[i+1]] = np.diag(svals_i)**2 if svals_provided[i] else modes_i.gramian()
+            gramian[offsets[i]:offsets[i+1], offsets[i]:offsets[i+1]] = np.diag(svals_i)**2 if svals_provided[i] \
+                                                                                            else modes_i.gramian()
             for j in range(i+1, len(inputs)):
                 modes_j = inputs[j][0]
                 cross_gramian = modes_i.dot(modes_j)
@@ -113,7 +116,7 @@ class MPICommunicator(object):
 
 
 def incremental_hapod_over_ranks(comm, modes, num_snaps_in_leafs, parameters, svals=None, last_hapod=False,
-                          logfile=None, incremental_gramian=True):
+                                 incremental_gramian=True):
     ''' A incremental HAPOD with modes and possibly svals stored on ranks of the MPI communicator comm.
         May be used as part of a larger HAPOD tree, in that case you need to specify whether this
         part of the tree contains the root node (last_hapod=True)'''
@@ -129,18 +132,16 @@ def incremental_hapod_over_ranks(comm, modes, num_snaps_in_leafs, parameters, sv
                 modes = None
             # receive modes and svals
             elif comm.rank == 0:
-                modes_on_source, svals_on_source, total_num_snapshots_on_source = \
-                    comm.recv_modes(current_rank)
+                modes_on_source, svals_on_source, total_num_snapshots_on_source = comm.recv_modes(current_rank)
                 max_vecs_before_pod = max(max_vecs_before_pod, len(modes) + len(modes_on_source))
                 total_num_snapshots += total_num_snapshots_on_source
-                modes, svals = local_pod(
-                    [[modes, svals], [modes_on_source, svals_on_source]
-                     if len(svals_on_source) > 0 else modes_on_source],
-                    total_num_snapshots,
-                    parameters,
-                    incremental_gramian=incremental_gramian,
-                    root_of_tree=(current_rank == comm.size - 1 and last_hapod)
-                )
+                modes, svals = local_pod([[modes, svals],
+                                          [modes_on_source, svals_on_source] if len(svals_on_source) > 0
+                                          else modes_on_source],
+                                         total_num_snapshots,
+                                         parameters,
+                                         incremental_gramian=incremental_gramian,
+                                         root_of_tree=(current_rank == comm.size - 1 and last_hapod))
                 max_local_modes = max(max_local_modes, len(modes))
                 del modes_on_source
     return modes, svals, total_num_snapshots, max_vecs_before_pod, max_local_modes
@@ -159,8 +160,8 @@ def binary_tree_depth(comm):
     return binary_tree_depth
 
 
-def binary_tree_hapod_over_ranks(comm, modes, num_snaps_in_leafs, parameters, svals=None,
-                                 last_hapod=True, incremental_gramian=True):
+def binary_tree_hapod_over_ranks(comm, modes, num_snaps_in_leafs, parameters, svals=None, last_hapod=True,
+                                 incremental_gramian=True):
     ''' A HAPOD with modes and possibly svals stored on ranks of the MPI communicator comm. A binary tree
         of MPI ranks is used as HAPOD tree.
         May be used as part of a larger HAPOD tree, in that case you need to specify whether this
@@ -182,18 +183,16 @@ def binary_tree_hapod_over_ranks(comm, modes, num_snaps_in_leafs, parameters, sv
                     comm.send_modes(receiving_rank, modes, svals, total_num_snapshots)
                     modes = None
                 elif comm.rank == receiving_rank:
-                    modes_on_source, svals_on_source, total_num_snapshots_on_source = \
-                        comm.recv_modes(sending_rank)
+                    modes_on_source, svals_on_source, total_num_snapshots_on_source = comm.recv_modes(sending_rank)
                     max_vecs_before_pod = max(max_vecs_before_pod, len(modes) + len(modes_on_source))
                     total_num_snapshots += total_num_snapshots_on_source
-                    modes, svals = local_pod(
-                        [[modes, svals], [modes_on_source, svals_on_source]
-                         if len(svals_on_source) > 0 else modes_on_source],
-                        total_num_snapshots,
-                        parameters,
-                        incremental_gramian=incremental_gramian,
-                        root_of_tree=((len(ranks) == 2) and last_hapod)
-                    )
+                    modes, svals = local_pod([[modes, svals],
+                                              [modes_on_source, svals_on_source] if len(svals_on_source) > 0
+                                              else modes_on_source],
+                                             total_num_snapshots,
+                                             parameters,
+                                             incremental_gramian=incremental_gramian,
+                                             root_of_tree=((len(ranks) == 2) and last_hapod))
                     max_local_modes = max(max_local_modes, len(modes))
             ranks = list(remaining_ranks)
     return modes, svals, total_num_snapshots, max_vecs_before_pod, max_local_modes

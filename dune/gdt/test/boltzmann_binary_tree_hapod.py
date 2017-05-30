@@ -36,12 +36,12 @@ def boltzmann_binary_tree_hapod(grid_size, chunk_size, tol, omega=0.95, logfile=
         timestep_vectors = solver.next_n_time_steps(chunk_size)
         num_snapshots = len(timestep_vectors)
         # calculate POD of timestep vectors on each core
-        timestep_vectors, timestep_svals = local_pod([timestep_vectors], num_snapshots, hapod_params, incremental_gramian=False)
+        timestep_vectors, timestep_svals = local_pod([timestep_vectors], num_snapshots, hapod_params,
+                                                     incremental_gramian=False)
         timestep_vectors.scal(timestep_svals)
-        gathered_vectors, _, num_snapshots_in_this_chunk, _ = \
-            mpi.comm_proc.gather_on_rank_0(timestep_vectors,
-                                                                     num_snapshots,
-                                                                     num_modes_equal=False)
+        gathered_vectors, _, num_snapshots_in_this_chunk, _ = mpi.comm_proc.gather_on_rank_0(timestep_vectors,
+                                                                                             num_snapshots,
+                                                                                             num_modes_equal=False)
         del timestep_vectors
         # if there are already modes from the last chunk of vectors, perform another pod on rank 0
         if mpi.rank_proc == 0:
@@ -82,7 +82,8 @@ def boltzmann_binary_tree_hapod(grid_size, chunk_size, tol, omega=0.95, logfile=
 
     # write statistics to file
     if logfile is not None and mpi.rank_world == 0:
-        logfile.write("The HAPOD resulted in %d final modes taken from a total of %d snapshots!\n" % (len(final_modes), total_num_snapshots))
+        logfile.write("The HAPOD resulted in %d final modes taken from a total of %d snapshots!\n"
+                      % (len(final_modes), total_num_snapshots))
         logfile.write("The maximal number of local modes was: " + str(max_local_modes) + "\n")
         logfile.write("The maximal number of input vectors to a local POD was: " + str(max_vectors_before_pod) + "\n")
         logfile.write("The maximum amount of memory used on rank 0 was: " +
@@ -98,14 +99,13 @@ if __name__ == "__main__":
     chunk_size = int(sys.argv[2])
     tol = float(sys.argv[3])
     omega = float(sys.argv[4])
-    incremental_gramian = not (sys.argv[5] == "False" or sys.argv[5] == "0") if len(sys.argv) > 5 else True
+    inc_gramian = not (sys.argv[5] == "False" or sys.argv[5] == "0") if len(sys.argv) > 5 else True
     filename = "HAPOD_binary_tree_gridsize_%d_chunksize_%d_tol_%f_omega_%f" % (grid_size, chunk_size, tol, omega)
     logfile = open(filename, "a")
-    final_modes, _, total_num_snapshots, mu, mpi, _, _, _ = boltzmann_binary_tree_hapod(
-        grid_size, chunk_size, tol * grid_size,
-        omega=omega, logfile=logfile,
-        incremental_gramian=incremental_gramian
-    )
+    final_modes, _, total_num_snapshots, mu, mpi, _, _, _ = boltzmann_binary_tree_hapod(grid_size, chunk_size,
+                                                                                        tol * grid_size,
+                                                                                        omega=omega, logfile=logfile,
+                                                                                        incremental_gramian=inc_gramian)
     final_modes, win = mpi.shared_memory_bcast_modes(final_modes)
     calculate_error(final_modes, grid_size, mu, total_num_snapshots, mpi, logfile=logfile)
     win.Free()

@@ -24,7 +24,8 @@ class MPIWrapper:
 
         # create communicator containing rank 0 processes from each processor
         self.contained_in_rank_0_group = 1 if self.rank_proc == 0 else 0
-        self.comm_rank_0_group = BoltzmannMPICommunicator(self.comm_world.Split(self.contained_in_rank_0_group, self.rank_world))
+        self.comm_rank_0_group = BoltzmannMPICommunicator(self.comm_world.Split(self.contained_in_rank_0_group,
+                                                                                self.rank_world))
         self.size_rank_0_group = self.comm_rank_0_group.size
         self.rank_rank_0_group = self.comm_rank_0_group.rank
 
@@ -47,7 +48,7 @@ class MPIWrapper:
         size = modes_length * vector_length
         itemsize = MPI.DOUBLE.Get_size()
         num_bytes = size * itemsize if self.rank_proc == 0 else 0
-        win = MPI.Win.Allocate_shared(num_bytes, itemsize, comm=self.comm_proc.comm)
+        win = MPI.Win.Allocate_shared(num_bytes, itemsize, comm=self.comm_proc)
         buf, itemsize = win.Shared_query(rank=0)
         assert itemsize == MPI.DOUBLE.Get_size()
         buf = np.array(buf, dtype='B', copy=False)
