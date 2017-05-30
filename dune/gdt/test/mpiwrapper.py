@@ -13,29 +13,20 @@ class MPIWrapper:
     def __init__(self):
         # Preparation: setup MPI
         # create world communicator
-        self.comm_world = MPI.COMM_WORLD
-        self.rank_world = self.comm_world.Get_rank()
-        self.size_world = self.comm_world.Get_size()
-
-        # gather processor names and assign each processor name a unique positive number
-        proc_name = MPI.Get_processor_name()
-        self.proc_name = proc_name
-        proc_names = self.comm_world.allgather(proc_name)
-        proc_names = sorted(set(proc_names))
-        proc_numbers = dict()
-        for i, proc_key in enumerate(proc_names):
-            proc_numbers[proc_key] = i
+        self.comm_world = BoltzmannMPICommunicator(MPI.COMM_WORLD)
+        self.rank_world = self.comm_world.rank
+        self.size_world = self.comm_world.size
 
         # use processor numbers to create a communicator on each processor
-        self.comm_proc = MPI.Intracomm.Split(self.comm_world, proc_numbers[proc_name], self.rank_world)
-        self.size_proc = self.comm_proc.Get_size()
-        self.rank_proc = self.comm_proc.Get_rank()
+        self.comm_proc = BoltzmannMPICommunicator(self.comm_world.Split_type(MPI.COMM_TYPE_SHARED))
+        self.size_proc = self.comm_proc.size
+        self.rank_proc = self.comm_proc.rank
 
         # create communicator containing rank 0 processes from each processor
         self.contained_in_rank_0_group = 1 if self.rank_proc == 0 else 0
-        self.comm_rank_0_group = MPI.Intracomm.Split(self.comm_world, self.contained_in_rank_0_group, self.rank_world)
-        self.size_rank_0_group = self.comm_rank_0_group.Get_size()
-        self.rank_rank_0_group = self.comm_rank_0_group.Get_rank()
+        self.comm_rank_0_group = BoltzmannMPICommunicator(self.comm_world.Split(self.contained_in_rank_0_group, self.rank_world))
+        self.size_rank_0_group = self.comm_rank_0_group.size
+        self.rank_rank_0_group = self.comm_rank_0_group.rank
 
     def shared_memory_bcast_modes(self, modes, returnlistvectorarray=False):
         ''' broadcast modes on rank 0 to all ranks by using a shared memory buffer on each node
@@ -56,14 +47,14 @@ class MPIWrapper:
         size = modes_length * vector_length
         itemsize = MPI.DOUBLE.Get_size()
         num_bytes = size * itemsize if self.rank_proc == 0 else 0
-        win = MPI.Win.Allocate_shared(num_bytes, itemsize, comm=self.comm_proc)
+        win = MPI.Win.Allocate_shared(num_bytes, itemsize, comm=self.comm_proc.comm)
         buf, itemsize = win.Shared_query(rank=0)
         assert itemsize == MPI.DOUBLE.Get_size()
         buf = np.array(buf, dtype='B', copy=False)
         modes_numpy = np.ndarray(buffer=buf, dtype='d', shape=(modes_length, vector_length))
         if self.rank_proc == 0:
             if self.rank_world == 0:
-                self.comm_rank_0_group.Bcast([modes.data, MPI.DOUBLE], root=0)
+                self.comm_rank_0_group.comm.Bcast([modes.data, MPI.DOUBLE], root=0)
                 for i, v in enumerate(modes._list):
                     modes_numpy[i, :] = v.data[:]
                     del v
@@ -79,7 +70,7 @@ class MPIWrapper:
             return modes, win
 
 
-class BoltzmannMPICommunicator(MPICommunicator):
+class BoltzmannMPICommunicator(MPICommunicator, MPI.Intracomm):
 
     def __init__(self, comm):
         self.comm = comm
@@ -149,3 +140,9 @@ class BoltzmannMPICommunicator(MPICommunicator):
         if rank == 0:
             vectors_gathered = DuneStuffListVectorSpace.from_data(vectors_gathered)
         return vectors_gathered, svals_gathered, num_snapshots_in_associated_leafs, offsets_svals
+ 
+    def __getattr__(self, item):
+        if item in self.__dict__:
+            return self.__dict__[item] 
+        else:
+            return self.comm.__getattr__(item) # redirection

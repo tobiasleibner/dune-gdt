@@ -6,7 +6,7 @@ import numpy as np
 from pymor.algorithms.pod import pod
 
 from boltzmannutility import calculate_error, create_and_scatter_boltzmann_parameters, create_boltzmann_solver
-from mpiwrapper import MPIWrapper, BoltzmannMPICommunicator
+from mpiwrapper import MPIWrapper
 
 
 def boltzmann_pod(grid_size, tol, logfile=None):
@@ -29,7 +29,7 @@ def boltzmann_pod(grid_size, tol, logfile=None):
 
     # gather snapshots on rank 0
     start = timer()
-    result, _, total_num_snapshots, _ = BoltzmannMPICommunicator(mpi.comm_world).gather_on_rank_0(
+    result, _, total_num_snapshots, _ = mpi.comm_world.gather_on_rank_0(
         result, num_snapshots, num_modes_equal=True
     )
     svals = None

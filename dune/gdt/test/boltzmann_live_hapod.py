@@ -7,7 +7,7 @@ import numpy as np
 from boltzmannutility import (calculate_error, create_and_scatter_boltzmann_parameters, create_boltzmann_solver,
                               solver_statistics)
 from hapod import local_pod, HapodParameters, live_hapod_over_ranks
-from mpiwrapper import MPIWrapper, BoltzmannMPICommunicator
+from mpiwrapper import MPIWrapper
 
 
 def boltzmann_live_hapod(grid_size, chunk_size, tol, omega=0.95, logfile=None, incremental_pod=True):
@@ -37,7 +37,7 @@ def boltzmann_live_hapod(grid_size, chunk_size, tol, omega=0.95, logfile=None, i
         timestep_vectors, timestep_svals = local_pod([timestep_vectors], num_snapshots, hapod_params, incremental=False)
         timestep_vectors.scal(timestep_svals)
         gathered_vectors, _, num_snapshots_in_this_chunk, _ = \
-            BoltzmannMPICommunicator(mpi.comm_proc).gather_on_rank_0(timestep_vectors,
+            mpi.comm_proc.gather_on_rank_0(timestep_vectors,
                                                                      num_snapshots,
                                                                      num_modes_equal=False)
         del timestep_vectors
@@ -58,7 +58,7 @@ def boltzmann_live_hapod(grid_size, chunk_size, tol, omega=0.95, logfile=None, i
     start2 = timer()
     if mpi.rank_proc == 0:
         final_modes, svals, total_num_snapshots, max_vectors_before_pod_in_hapod, max_local_modes_in_hapod \
-            = live_hapod_over_ranks(BoltzmannMPICommunicator(mpi.comm_rank_0_group),
+            = live_hapod_over_ranks(mpi.comm_rank_0_group,
                                     modes,
                                     total_num_snapshots,
                                     hapod_params,
