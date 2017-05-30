@@ -10,7 +10,7 @@ from hapod import local_pod, HapodParameters, binary_tree_hapod_over_ranks, bina
 from mpiwrapper import MPIWrapper
 
 
-def boltzmann_binary_tree_hapod(grid_size, chunk_size, tol, omega=0.95, logfile=None, incremental_pod=True):
+def boltzmann_binary_tree_hapod(grid_size, chunk_size, tol, omega=0.95, logfile=None, incremental_gramian=True):
 
     start = timer()
 
@@ -36,7 +36,7 @@ def boltzmann_binary_tree_hapod(grid_size, chunk_size, tol, omega=0.95, logfile=
         timestep_vectors = solver.next_n_time_steps(chunk_size)
         num_snapshots = len(timestep_vectors)
         # calculate POD of timestep vectors on each core
-        timestep_vectors, timestep_svals = local_pod([timestep_vectors], num_snapshots, hapod_params, incremental=False)
+        timestep_vectors, timestep_svals = local_pod([timestep_vectors], num_snapshots, hapod_params, incremental_gramian=False)
         timestep_vectors.scal(timestep_svals)
         gathered_vectors, _, num_snapshots_in_this_chunk, _ = \
             mpi.comm_proc.gather_on_rank_0(timestep_vectors,
@@ -51,7 +51,7 @@ def boltzmann_binary_tree_hapod(grid_size, chunk_size, tol, omega=0.95, logfile=
             else:
                 max_vectors_before_pod = max(max_vectors_before_pod, len(modes) + len(gathered_vectors))
                 modes, svals = local_pod([[modes, svals], gathered_vectors], total_num_snapshots,
-                                         hapod_params, incremental=incremental_pod,
+                                         hapod_params, incremental_gramian=incremental_gramian,
                                          root_of_tree=(i == num_chunks-1 and mpi.size_rank_0_group == 1))
             max_local_modes = max(max_local_modes, len(modes))
             del gathered_vectors
@@ -66,7 +66,7 @@ def boltzmann_binary_tree_hapod(grid_size, chunk_size, tol, omega=0.95, logfile=
                                            hapod_params,
                                            svals=svals,
                                            last_hapod=True,
-                                           incremental_pod=incremental_pod)
+                                           incremental_gramian=incremental_gramian)
         max_vectors_before_pod = max(max_vectors_before_pod, max_vectors_before_pod_in_hapod)
         max_local_modes = max(max_local_modes, max_local_modes_in_hapod)
         del modes
@@ -98,13 +98,13 @@ if __name__ == "__main__":
     chunk_size = int(sys.argv[2])
     tol = float(sys.argv[3])
     omega = float(sys.argv[4])
-    incremental_pod = not (sys.argv[5] == "False" or sys.argv[5] == "0") if len(sys.argv) > 5 else True
+    incremental_gramian = not (sys.argv[5] == "False" or sys.argv[5] == "0") if len(sys.argv) > 5 else True
     filename = "HAPOD_binary_tree_gridsize_%d_chunksize_%d_tol_%f_omega_%f" % (grid_size, chunk_size, tol, omega)
     logfile = open(filename, "a")
     final_modes, _, total_num_snapshots, mu, mpi, _, _, _ = boltzmann_binary_tree_hapod(
         grid_size, chunk_size, tol * grid_size,
         omega=omega, logfile=logfile,
-        incremental_pod=incremental_pod
+        incremental_gramian=incremental_gramian
     )
     final_modes, _ = mpi.shared_memory_bcast_modes(final_modes)
     calculate_error(final_modes, grid_size, mu, total_num_snapshots, mpi, logfile=logfile)
