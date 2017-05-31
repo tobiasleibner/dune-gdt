@@ -12,7 +12,7 @@ from boltzmann import wrapper
 def create_and_scatter_boltzmann_parameters(comm, min_param=0., max_param=8.):
     ''' Samples all 3 parameters uniformly with the same width and adds random parameter combinations until
         comm.Get_size() parameters are created. After that, parameter combinations are scattered to ranks. '''
-    num_samples_per_parameter = int(comm.Get_size()**(1./3.))
+    num_samples_per_parameter = int(comm.Get_size()**(1./3.)+0.1)
     sample_width = (max_param - min_param) / (num_samples_per_parameter - 1) if num_samples_per_parameter > 1 else 1e10
     sigma_s_scattering_range = sigma_s_absorbing_range = sigma_a_absorbing_range = np.arange(min_param,
                                                                                              max_param + 1e-13,
@@ -32,7 +32,6 @@ def create_and_scatter_boltzmann_parameters(comm, min_param=0., max_param=8.):
                                 random.uniform(min_param, max_param),
                                 0.,
                                 random.uniform(min_param, max_param)])
-
     return comm.scatter(parameters_list, root=0)
 
 
