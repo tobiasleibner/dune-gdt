@@ -12,20 +12,19 @@ import resource
 
 from pymor.basic import *
 from boltzmann.wrapper import DuneDiscretization
-from boltzmann_Hapod_timechunk_wise import hapod_timechunk_wise
-from boltzmann_POD import boltzmann_standard_pod
-from boltzmann_mor import calculate_mean_l2_error_for_random_samples
-from boltzmann_live_HAPOD_on_trajectory import live_hapod_on_trajectory
-from Hapod import HapodBasics
+from boltzmann_incremental_hapod import boltzmann_incremental_hapod
+from boltzmann_pod import boltzmann_pod
+from boltzmann_mor import calculate_l2_error_for_random_samples
+from mpiwrapper import MPIWrapper
+from boltzmannutility import calculate_total_projection_error
 
 grid_size = int(sys.argv[1])
 chunk_size = int(sys.argv[2])
 omega = float(sys.argv[3])
 
-# tcw = timechunkwise, live = live HAPOD with compute nodes, bt = binary tree of compute nodes, inc=incremental_POD_algorithm
-hapod_types = ["tcw_live", "tcw_live_inc", "tcw_bt", "tcw_bt_inc"]
-is_incremental = [False, True, False, True]
-binary_tree = [False, False, True, True]
+# inc_inc = incremental HAPOD with incremental gramian POD algorithm, inc = incremental HAPOD with standard POD
+hapod_types = ["inc_inc", "inc"]
+incremental_gramian = [True, False]
 
 # create lists of empty lists to store the values
 num_modes_hapod, max_num_local_modes_hapod, max_vecs_before_pod_hapod, time_hapod, l2_proj_errs_snaps_hapod, l2_proj_errs_random_hapod, l2_red_errs_hapod, memory_hapod, svals_hapod = [[[] for i in hapod_types] for i in range(9)]
@@ -41,39 +40,39 @@ for exponent in range(2, 6):
     tol1 = 0.1 ** exponent
     tol = tol1 * grid_size
     x_axis.append(tol1)
-    b = HapodBasics(grid_size, chunk_size, epsilon_ast=tol, omega=omega)
-    if b.rank_world == 0:
+    mpi = MPIWrapper()
+    if mpi.rank_world == 0:
         print("Current tolerance:", tol)
         logfile.write("Current tolerance:" + str(tol) + "\n")
 
     for num, hapod_type in enumerate(hapod_types):
         try:
             f = open(filenames_hapod[num] + "_tol_" + str(tol), "rb")
-            if b.rank_world == 0:
+            if mpi.rank_world == 0:
                 basis, svals, total_num_snapshots, elapsed, max_vecs_before_pod, max_local_modes, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = pickle.load(f) 
             else:
                 basis, svals, total_num_snapshots, elapsed, max_vecs_before_pod, max_local_modes, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = ([None],)*9
             f.close()    
         except (OSError, IOError) as e:
     	    start = timer()
-            basis, svals, total_num_snapshots, b, max_vecs_before_pod, max_local_modes = hapod_timechunk_wise(grid_size, chunk_size, tol, log=False, bcast_modes=False, 
-                                                                                                              calculate_max_local_modes=True, omega=omega, 
-                                                                                                              incremental_pod=is_incremental[num],
-                                                                                                              nodes_binary_tree=binary_tree[num])
+            basis, svals, total_num_snapshots, mu, mpi, max_vecs_before_pod, max_local_modes, solver = boltzmann_incremental_hapod(grid_size, chunk_size, tol, omega=omega, 
+                                                                                                                                   incremental_gramian=incremental_gramian[num])
             elapsed = timer() - start
-            basis = b.shared_memory_bcast_modes(basis)
-            l2_proj_err_snaps = b.calculate_total_projection_error(basis, total_num_snapshots)
-            if b.rank_world == 0:
+            basis = mpi.shared_memory_bcast_modes(basis, returnlistvectorarray=True)
+            l2_red_err_list_random, l2_proj_err_list_random, _, _ = calculate_l2_error_for_random_samples(basis, mpi, solver, grid_size, chunk_size)
+            basis, win = mpi.shared_memory_bcast_modes(basis)
+            l2_proj_err_snaps = calculate_total_projection_error(basis, grid_size, mu, total_num_snapshots, mpi)
+            if mpi.rank_world == 0:
                 l2_proj_err_snaps /= grid_size
-            l2_red_err_list_random, l2_proj_err_list_random, _, _ = calculate_mean_l2_error_for_random_samples(basis, b, seed=b.rank_world, write_plot=False, mean_error=False)
-            l2_proj_err_random = np.sqrt(np.sum(l2_proj_err_list_random) / total_num_snapshots)/grid_size if b.rank_world == 0 else None
-            l2_red_err_random = np.sqrt(np.sum(l2_red_err_list_random) / total_num_snapshots)/grid_size if b.rank_world == 0 else None
-            b.comm_world.Barrier()
-            if b.rank_world == 0:
+            l2_proj_err_random = np.sqrt(np.sum(l2_proj_err_list_random) / total_num_snapshots) / grid_size if mpi.rank_world == 0 else None
+            l2_red_err_random = np.sqrt(np.sum(l2_red_err_list_random) / total_num_snapshots) / grid_size if mpi.rank_world == 0 else None
+            mpi.comm_world.Barrier()
+            if mpi.rank_world == 0:
                 f = open(filenames_hapod[num] + "_tol_" + str(tol), "wb")
                 tmp = basis, svals, total_num_snapshots, elapsed, max_vecs_before_pod, max_local_modes, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random
                 pickle.dump(tmp, f)
                 f.close()
+            win.Free()
         time_hapod[num].append(elapsed)
         num_modes_hapod[num].append(len(basis))
         max_num_local_modes_hapod[num].append(max_local_modes)
@@ -83,39 +82,35 @@ for exponent in range(2, 6):
         l2_red_errs_hapod[num].append(l2_red_err_random)
         memory_hapod[num].append(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2)
         svals_hapod[num].append(svals)
-        for win in b.allocated_wins:
-            win.Free()
-        b.allocated_wins = []
-        if b.rank_world == 0:
-            logfile.write("The maximum amount of memory used on rank " + str(b.rank_world) + " was: " +
-                           str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2) + " GB\n")
-        if b.rank_world == 0:
+        if mpi.rank_world == 0:
             print(hapod_type + "done \n")
 
     try:
         g = open(filename_pod + "_tol_" + str(tol), "rb")
-        if b.rank_world == 0:
+        if mpi.rank_world == 0:
             basis, svals, total_num_snapshots, elapsed_data_gen, elapsed_pod, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = pickle.load(g) 
         else:
             basis, svals, total_num_snapshots, elapsed_data_gen, elapsed_pod, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random = ([None],)*8
         g.close()    
     except (OSError, IOError) as e:
         start = timer()
-        basis, svals, total_num_snapshots, b, elapsed_data_gen, elapsed_pod = boltzmann_standard_pod(grid_size, tol, log=False, bcast_modes=False)
+        basis, svals, total_num_snapshots, mu, mpi, elapsed_data_gen, elapsed_pod, solver = boltzmann_pod(grid_size, tol)
         elapsed = timer() - start
-        basis = b.shared_memory_bcast_modes(basis)
-        l2_proj_err_snaps = b.calculate_total_projection_error(basis, total_num_snapshots)
-        if b.rank_world == 0:
+        basis = mpi.shared_memory_bcast_modes(basis, returnlistvectorarray=True)
+        l2_red_err_list_random, l2_proj_err_list_random, _, _ = calculate_l2_error_for_random_samples(basis, mpi, solver, grid_size, chunk_size)
+        basis, win = mpi.shared_memory_bcast_modes(basis)
+        l2_proj_err_snaps = calculate_total_projection_error(basis, grid_size, mu, total_num_snapshots, mpi)
+        if mpi.rank_world == 0:
             l2_proj_err_snaps /= grid_size
-        l2_red_err_list_random, l2_proj_err_list_random, _, _ = calculate_mean_l2_error_for_random_samples(basis, b, seed=b.rank_world, write_plot=False, mean_error=False)
-        l2_proj_err_random = np.sqrt(np.sum(l2_proj_err_list_random) / total_num_snapshots)/grid_size if b.rank_world == 0 else None
-        l2_red_err_random = np.sqrt(np.sum(l2_red_err_list_random) / total_num_snapshots)/grid_size if b.rank_world == 0 else None
-        b.comm_world.Barrier()
-        if b.rank_world == 0:
+        l2_proj_err_random = np.sqrt(np.sum(l2_proj_err_list_random) / total_num_snapshots)/grid_size if mpi.rank_world == 0 else None
+        l2_red_err_random = np.sqrt(np.sum(l2_red_err_list_random) / total_num_snapshots)/grid_size if mpi.rank_world == 0 else None
+        mpi.comm_world.Barrier()
+        if mpi.rank_world == 0:
             g = open(filename_pod + "_tol_" + str(tol), "wb")
             tmp = basis, svals, total_num_snapshots, elapsed_data_gen, elapsed_pod, l2_proj_err_snaps, l2_proj_err_random, l2_red_err_random
             pickle.dump(tmp, g)
             g.close()
+        win.Free()
     time_pod.append(elapsed_pod + elapsed_data_gen)
     time_data_gen_pod.append(elapsed_data_gen)
     num_modes_pod.append(len(basis))
@@ -124,22 +119,16 @@ for exponent in range(2, 6):
     l2_red_errs_pod.append(l2_red_err_random)
     memory_pod.append(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2)
     svals_pod.append(svals)
-    for win in b.allocated_wins:
-        win.Free()
-    b.allocated_wins = []
     del basis
-    if b.rank_world == 0:
-        logfile.write("The maximum amount of memory used on rank " + str(b.rank_world) + " was: " +
-                       str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1000.**2) + " GB\n")
-    if b.rank_world == 0:
-            print("pod done\n")
+    if mpi.rank_world == 0:
+        print("pod done\n")
 
 
 from matplotlib.font_manager import FontProperties
 fontP = FontProperties()
 fontP.set_size('small')
 
-if b.rank_world == 0:
+if mpi.rank_world == 0:
     plt.figure()
 
     for num, hapod_type in enumerate(hapod_types):
@@ -151,7 +140,7 @@ if b.rank_world == 0:
     plt.ylabel("POD basis size")
     plt.legend(loc='upper left')
 
-    filename = "num_modes_gridsize_%d_chunk_%d_omega_%g" % (b.gridsize, chunk_size, omega)
+    filename = "num_modes_gridsize_%d_chunk_%d_omega_%g" % (grid_size, chunk_size, omega)
 
     plt.savefig(filename + ".png")
     plt.clf()
@@ -187,7 +176,7 @@ if b.rank_world == 0:
     plt.ylabel("L2 mean error")
     plt.legend(loc='lower left', prop=fontP)
 
-    filename = "l2_mean_errs_gridsize_%d_chunk_%d_omega_%g" % (b.gridsize, chunk_size, omega)
+    filename = "l2_mean_errs_gridsize_%d_chunk_%d_omega_%g" % (grid_size, chunk_size, omega)
 
     plt.savefig(filename + ".png")
     plt.clf()
@@ -215,7 +204,7 @@ if b.rank_world == 0:
     plt.ylabel("Elapsed time (seconds)")
     plt.legend(loc='upper right')
 
-    filename = "time_gridsize_%d_chunk_%d_omega_%g" % (b.gridsize, chunk_size, omega)
+    filename = "time_gridsize_%d_chunk_%d_omega_%g" % (grid_size, chunk_size, omega)
 
     plt.savefig(filename + ".png")
     plt.clf()
@@ -237,7 +226,7 @@ if b.rank_world == 0:
     plt.ylabel("Memory usage (GB)")
     plt.legend(loc='upper right')
 
-    plt.savefig("memory_gridsize_" + str(b.gridsize) + "_chunk_" + str(chunk_size) + "_omega_" + str(omega) + ".png")
+    plt.savefig("memory_gridsize_" + str(gridsize) + "_chunk_" + str(chunk_size) + "_omega_" + str(omega) + ".png")
     plt.clf()
 
 
@@ -253,7 +242,7 @@ if b.rank_world == 0:
     plt.ylabel("Value")
     plt.legend(loc='upper right')
 
-    filename = "svals_gridsize_%d_chunk_%d_omega_%g_tol_%g_norm" % (b.gridsize, chunk_size, omega, x_axis[-1])
+    filename = "svals_gridsize_%d_chunk_%d_omega_%g_tol_%g_norm" % (gridsize, chunk_size, omega, x_axis[-1])
 
     plt.savefig(filename + ".png")
     plt.clf()
