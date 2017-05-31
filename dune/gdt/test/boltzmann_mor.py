@@ -13,53 +13,55 @@ from boltzmannutility import solver_statistics
 
 
 def calculate_l2_error_for_random_samples(basis, mpi, solver, grid_size, chunk_size,
-                                          seed=MPI.COMM_WORLD.Get_rank()*time.clock(),
-                                          mean_error=False, with_half_steps=True):
+                                          seed=MPI.COMM_WORLD.Get_rank(), 
+                                          params_per_rank=10,
+                                          with_half_steps=True):
     '''Calculates model reduction and projection error for random parameter'''
 
     random.seed(seed)
-    mu = [random.uniform(0., 8.), random.uniform(0., 8.), 0., random.uniform(0., 8.)]
 
     _, num_time_steps = solver_statistics(solver, chunk_size, with_half_steps)
-
     nt = int(num_time_steps - 1) if not with_half_steps else int((num_time_steps - 1)/2)
-    d = DuneDiscretization(nt,
-                           solver.time_step_length(),
-                           '',
-                           2000000,
-                           grid_size,
-                           False,
-                           True,
-                           *mu)
+    elapsed_high_dim = elapsed_red = red_errs = proj_errs = 0.
 
-    mu = d.parse_parameter(mu)
+    for _ in range(params_per_rank):
+        mu = [random.uniform(0., 8.), random.uniform(0., 8.), 0., random.uniform(0., 8.)]
 
-    # calculate high-dimensional solution
-    start = timer()
-    U = d.solve(mu, return_half_steps=False)
-    elapsed_high_dim = timer() - start
+        d = DuneDiscretization(nt,
+                               solver.time_step_length(),
+                               '',
+                               2000000,
+                               grid_size,
+                               False,
+                               True,
+                               *mu)
 
-    rd, rc, _ = reduce_generic_rb(d.as_generic_type(), basis)
+        mu = d.parse_parameter(mu)
 
-    red_errs = []
-    proj_errs = []
+        # calculate high-dimensional solution
+        start = timer()
+        U = d.solve(mu, return_half_steps=False)
+        elapsed_high_dim += timer() - start
 
-    start = timer()
-    U_rb = rd.solve(mu)
-    elapsed_red = timer() - start
-    U_rb = rc.reconstruct(U_rb)
-    if mean_error:
-        red_errs = np.sqrt(np.sum((U - U_rb).l2_norm()**2) / len(U))
-        proj_errs = np.sqrt(np.sum((U - basis.lincomb(U.dot(basis))).l2_norm()**2) / len(U))
-    else:
-        red_errs = np.sum((U - U_rb).l2_norm()**2)
-        proj_errs = np.sum((U - basis.lincomb(U.dot(basis))).l2_norm()**2)
+        rd, rc, _ = reduce_generic_rb(d.as_generic_type(), basis)
 
-    l2_mean_errs = mpi.comm_world.gather(red_errs, root=0)
-    l2_mean_projection_errors = mpi.comm_world.gather(proj_errs, root=0)
+        start = timer()
+        U_rb = rd.solve(mu)
+        elapsed_red += timer() - start
+        U_rb = rc.reconstruct(U_rb)
+        red_errs += np.sum((U - U_rb).l2_norm()**2)
+        proj_errs += np.sum((U - basis.lincomb(U.dot(basis))).l2_norm()**2)
+
+    elapsed_high_dim /= params_per_rank
+    elapsed_red /= params_per_rank
+    red_errs /= params_per_rank
+    proj_errs /= params_per_rank
+
+    red_errs = mpi.comm_world.gather(red_errs, root=0)
+    proj_errs = mpi.comm_world.gather(proj_errs, root=0)
     elapsed_red = mpi.comm_world.gather(elapsed_red, root=0)
     elapsed_high_dim = mpi.comm_world.gather(elapsed_high_dim, root=0)
-    return l2_mean_errs, l2_mean_projection_errors, elapsed_red, elapsed_high_dim
+    return red_errs, proj_errs, elapsed_red, elapsed_high_dim
 
 if __name__ == "__main__":
     '''Computes HAPOD to get reduced basis and then calculate projection and model reduction error for random samples'''
@@ -71,8 +73,8 @@ if __name__ == "__main__":
                                                                                   tol * grid_size, omega=omega)
     basis = mpi.shared_memory_bcast_modes(basis, returnlistvectorarray=True)
     red_errs, proj_errs, elapsed_red, elapsed_high_dim = calculate_l2_error_for_random_samples(basis, mpi, solver,
-                                                                                               grid_size, chunk_size,
-                                                                                               mean_error=False)
+                                                                                               grid_size, chunk_size)
+                        
     red_err = np.sqrt(np.sum(red_errs) / total_num_snaps) / grid_size if mpi.rank_world == 0 else None
     proj_err = np.sqrt(np.sum(proj_errs) / total_num_snaps) / grid_size if mpi.rank_world == 0 else None
     elapsed_red_mean = np.sum(elapsed_red) / len(elapsed_red) if mpi.rank_world == 0 else None
