@@ -53,7 +53,7 @@ def local_pod(inputs, num_snaps_in_leafs, parameters, root_of_tree=False, orthon
         else:
             raise ValueError("")
         offsets.append(offsets[-1]+len(inputs[i][0]))
-        vector_length = max(vector_length, modes[0][0].dim)
+        vector_length = max(vector_length, inputs[i][0][0].dim)
 
     if incremental_gramian:
         # calculate gramian avoiding recalculations
