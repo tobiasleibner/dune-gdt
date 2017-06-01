@@ -226,7 +226,7 @@ if mpi.rank_world == 0:
     plt.ylabel("Memory usage (GB)")
     plt.legend(loc='upper right')
 
-    plt.savefig("memory_gridsize_" + str(gridsize) + "_chunk_" + str(chunk_size) + "_omega_" + str(omega) + ".png")
+    plt.savefig("memory_gridsize_" + str(grid_size) + "_chunk_" + str(chunk_size) + "_omega_" + str(omega) + ".png")
     plt.clf()
 
 
@@ -242,7 +242,7 @@ if mpi.rank_world == 0:
     plt.ylabel("Value")
     plt.legend(loc='upper right')
 
-    filename = "svals_gridsize_%d_chunk_%d_omega_%g_tol_%g_norm" % (gridsize, chunk_size, omega, x_axis[-1])
+    filename = "svals_gridsize_%d_chunk_%d_omega_%g_tol_%g_norm" % (grid_size, chunk_size, omega, x_axis[-1])
 
     plt.savefig(filename + ".png")
     plt.clf()
