@@ -38,7 +38,7 @@ x_axis = []
 logfilename = "logfile_gridsize_plot" + "_chunk_" + str(chunk_size) + "_tol_" + str(initial_tol) +  "_omega_" + str(omega)
 logfile = open(logfilename, "w", 0)
 
-for grid_size in (5, 10, 20, 40, 60, 80, 100):
+for grid_size in (5, 10, 20, 40, 60, 80):
     tol = initial_tol * grid_size
     x_axis.append(grid_size)
     mpi = MPIWrapper()

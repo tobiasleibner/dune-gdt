@@ -53,7 +53,7 @@ def local_pod(inputs, num_snaps_in_leafs, parameters, root_of_tree=False, orthon
         else:
             raise ValueError("")
         offsets.append(offsets[-1]+len(inputs[i][0]))
-        vector_length = max(vector_length, inputs[i][0][0].dim)
+        vector_length = max(vector_length, inputs[i][0].dim)
 
     if incremental_gramian:
         # calculate gramian avoiding recalculations
@@ -160,7 +160,7 @@ def binary_tree_depth(comm):
     return binary_tree_depth
 
 
-def binary_tree_hapod_over_ranks(comm, modes, num_snaps_in_leafs, parameters, svals=None, last_hapod=True,
+def binary_tree_hapod_over_ranks(comm, modes, num_snaps_in_leafs, parameters, svals=None, last_hapod=False,
                                  incremental_gramian=True):
     ''' A HAPOD with modes and possibly svals stored on ranks of the MPI communicator comm. A binary tree
         of MPI ranks is used as HAPOD tree.
